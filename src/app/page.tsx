@@ -11,7 +11,7 @@ export default function Home() {
       transports: ["websocket"], // WebSocket을 명시적으로 사용
     });
 
-    socket.on("open", () => {
+    socket.on("connect", () => {
       setConnectStatus(200);
       console.log("Connected!");
       socket.on("connection", () => {
