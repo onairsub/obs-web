@@ -7,18 +7,19 @@ export default function Home() {
   const [connectStatus, setConnectStatus] = useState(0);
 
   useEffect(() => {
-    const socket = SocketIOClient("http://localhost:1984", {
+    const socket = SocketIOClient("http://localhost:4455", {
       transports: ["websocket"], // WebSocket을 명시적으로 사용
     });
 
-    socket.on("connect", () => {
+    socket.on("open", () => {
       setConnectStatus(200);
       console.log("Connected!");
-      socket.on("useSuccess", () => {
+      socket.on("connection", () => {
         setConnectStatus(201);
         console.log("success!");
       });
     });
+
     return () => {
       socket.disconnect();
     };
