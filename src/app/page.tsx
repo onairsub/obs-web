@@ -1,27 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import SocketIOClient from "socket.io-client";
 
 export default function Home() {
   const [connectStatus, setConnectStatus] = useState(0);
 
   useEffect(() => {
-    const socket = SocketIOClient("http://localhost:4455", {
-      transports: ["websocket"], // WebSocket을 명시적으로 사용
-    });
+    const socket = new WebSocket("ws://localhost:4455"); // OBS WebSocket에 연결
 
-    socket.on("connect", () => {
+    socket.onopen = () => {
       setConnectStatus(200);
       console.log("Connected!");
-      socket.on("connection", () => {
-        setConnectStatus(201);
-        console.log("success!");
-      });
-    });
+      // 여기에 인증 코드가 필요할 수 있음
+    };
+
+    socket.onmessage = (event) => {
+      console.log("메시지 수신:", event.data);
+      // 예: 특정 메시지를 수신했을 때 처리
+      setConnectStatus(201);
+    };
+
+    socket.onerror = (error) => {
+      console.error("WebSocket 에러:", error);
+    };
+
+    socket.onclose = () => {
+      console.log("WebSocket 연결이 닫혔습니다.");
+    };
 
     return () => {
-      socket.disconnect();
+      socket.close();
     };
   }, []);
 
