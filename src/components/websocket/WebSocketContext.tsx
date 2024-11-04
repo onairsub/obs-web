@@ -10,6 +10,11 @@ import crypto from "crypto-js";
 // WebSocketManager 클래스 가져오기
 import WebSocketManager from "./WebSocketManager";
 
+type Authentication = null | {
+  challenge: string;
+  salt: string;
+};
+
 function generateAuthHash(password: string, salt: string, challenge: string) {
   // Step 1: password + salt를 해싱
   const passwordSaltHash = crypto
@@ -26,9 +31,11 @@ function generateAuthHash(password: string, salt: string, challenge: string) {
 
 const WebSocketContext = createContext<{
   webSocketManager: WebSocketManager | null;
+  authentication: Authentication;
   connectStatus: number;
 }>({
   webSocketManager: null,
+  authentication: null,
   connectStatus: 0,
 });
 
@@ -37,15 +44,12 @@ export const WebSocketProvider = ({
   port = 4455,
   children,
 }: {
-  password: string | null;
-  port: number | undefined;
+  password?: string | null;
+  port?: number;
   children: any;
 }) => {
   const [connectStatus, setConnectStatus] = useState(0);
-  const [authentication, setAuthentication] = useState<null | {
-    challenge: string;
-    salt: string;
-  }>();
+  const [authentication, setAuthentication] = useState<Authentication>(null);
   const webSocketManager = useRef(
     new WebSocketManager(`ws://localhost:${port}`)
   ).current;
@@ -88,10 +92,12 @@ export const WebSocketProvider = ({
     return () => {
       webSocketManager.disconnect();
     };
-  }, [webSocketManager]);
+  }, [webSocketManager, password]);
 
   return (
-    <WebSocketContext.Provider value={{ webSocketManager, connectStatus }}>
+    <WebSocketContext.Provider
+      value={{ webSocketManager, authentication, connectStatus }}
+    >
       {children}
     </WebSocketContext.Provider>
   );
