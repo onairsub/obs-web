@@ -15,6 +15,13 @@ type Authentication = null | {
   salt: string;
 };
 
+type RecentResponse = null | {
+  requestId: string;
+  requestStatus: { code: number; result: boolean };
+  requestType: string;
+  responseData: any;
+};
+
 function generateAuthHash(password: string, salt: string, challenge: string) {
   // Step 1: password + salt를 해싱
   const passwordSaltHash = crypto
@@ -33,10 +40,12 @@ const WebSocketContext = createContext<{
   webSocketManager: WebSocketManager | null;
   authentication: Authentication;
   connectStatus: number;
+  recentResponse: RecentResponse;
 }>({
   webSocketManager: null,
   authentication: null,
   connectStatus: 0,
+  recentResponse: null,
 });
 
 export const WebSocketProvider = ({
@@ -50,6 +59,7 @@ export const WebSocketProvider = ({
 }) => {
   const [connectStatus, setConnectStatus] = useState(0);
   const [authentication, setAuthentication] = useState<Authentication>(null);
+  const [recentResponse, setRecentResponse] = useState<RecentResponse>(null);
   const webSocketManager = useRef(
     new WebSocketManager(`ws://localhost:${port}`)
   ).current;
@@ -83,12 +93,15 @@ export const WebSocketProvider = ({
           setConnectStatus(201);
           console.log("Authentication success!");
         }
+        if (message.op === 7) {
+          console.log("response");
+          setRecentResponse(message.d);
+        }
       },
       onError: (error: any) => {},
       onClose: () => {},
     });
 
-    // 컴포넌트 언마운트 시 연결 해제
     return () => {
       webSocketManager.disconnect();
     };
@@ -96,7 +109,12 @@ export const WebSocketProvider = ({
 
   return (
     <WebSocketContext.Provider
-      value={{ webSocketManager, authentication, connectStatus }}
+      value={{
+        webSocketManager,
+        authentication,
+        connectStatus,
+        recentResponse,
+      }}
     >
       {children}
     </WebSocketContext.Provider>

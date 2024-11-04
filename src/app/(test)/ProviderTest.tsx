@@ -2,9 +2,16 @@
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
 import { Button } from "@mui/material";
+import { useEffect, useState } from "react";
+
+type Scene = {
+  sceneName: string;
+  sceneUuid: string;
+};
 
 export default function ProviderTest() {
-  const { webSocketManager, connectStatus } = useWebSocket();
+  const { webSocketManager, connectStatus, recentResponse } = useWebSocket();
+  const [scenes, setScenes] = useState<Scene[]>([]);
 
   const GetSceneList = () => {
     webSocketManager?.sendMessage({
@@ -29,21 +36,30 @@ export default function ProviderTest() {
     });
   };
 
+  useEffect(() => {
+    console.log("useEffect");
+    if (recentResponse?.requestType === "GetSceneList") {
+      console.log("getscenelist!");
+      console.log(recentResponse.responseData.scenes);
+      setScenes(recentResponse.responseData.scenes);
+    }
+  }, [recentResponse]);
+
   return (
     <div>
       status: {connectStatus} <br />
       <Button variant="outlined" onClick={GetSceneList}>
         GetSceneList
       </Button>
-      <Button variant="outlined" onClick={() => SetCurrentProgramScene("장면")}>
-        SetCurrentProgramScene {"=>"} 장면
-      </Button>
-      <Button
-        variant="outlined"
-        onClick={() => SetCurrentProgramScene("장면 2")}
-      >
-        SetCurrentProgramScene {"=>"} 장면 2
-      </Button>
+      {scenes.toReversed().map((scene, idx) => (
+        <Button
+          key={idx}
+          variant="outlined"
+          onClick={() => SetCurrentProgramScene(scene.sceneName)}
+        >
+          SetCurrentProgramScene {"=>"} {scene.sceneName}
+        </Button>
+      ))}
     </div>
   );
 }
