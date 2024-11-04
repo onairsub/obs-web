@@ -1,14 +1,11 @@
 "use client";
 
-import {
-  useWebSocket,
-  WebSocketProvider,
-} from "@/components/websocket/WebSocketContext";
-import ProviderTest from "./test/page";
+import { WebSocketProvider } from "@/components/websocket/WebSocketContext";
+import ProviderTest from "./(test)/ProviderTest";
 
 export default function Home() {
   return (
-    <WebSocketProvider>
+    <WebSocketProvider password="u0hhsfhV4FUXHsBp">
       <ProviderTest />
     </WebSocketProvider>
   );

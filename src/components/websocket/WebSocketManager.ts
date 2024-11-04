@@ -1,4 +1,3 @@
-// WebSocketManager.js
 export default class WebSocketManager {
   url: string;
   socket: WebSocket | null;
@@ -16,10 +15,10 @@ export default class WebSocketManager {
     onError,
     onClose,
   }: {
-    onOpen: Function | null;
-    onMessage: Function | null;
-    onError: Function | null;
-    onClose: Function | null;
+    onOpen: () => void | null;
+    onMessage: (message: object) => void | null;
+    onError: (error: Event) => void | null;
+    onClose: () => void | null;
   }) {
     this.socket = new WebSocket(this.url);
 

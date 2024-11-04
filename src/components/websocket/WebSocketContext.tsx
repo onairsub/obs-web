@@ -5,9 +5,24 @@ import React, {
   useRef,
   useState,
 } from "react";
+import crypto from "crypto-js";
 
 // WebSocketManager 클래스 가져오기
 import WebSocketManager from "./WebSocketManager";
+
+function generateAuthHash(password: string, salt: string, challenge: string) {
+  // Step 1: password + salt를 해싱
+  const passwordSaltHash = crypto
+    .SHA256(password + salt)
+    .toString(crypto.enc.Base64);
+
+  // Step 2: 해시된 값 + challenge를 다시 해싱
+  const authHash = crypto
+    .SHA256(passwordSaltHash + challenge)
+    .toString(crypto.enc.Base64);
+
+  return authHash;
+}
 
 const WebSocketContext = createContext<{
   webSocketManager: WebSocketManager | null;
@@ -17,10 +32,22 @@ const WebSocketContext = createContext<{
   connectStatus: 0,
 });
 
-export const WebSocketProvider = ({ children }: { children: any }) => {
+export const WebSocketProvider = ({
+  password = null,
+  port = 4455,
+  children,
+}: {
+  password: string | null;
+  port: number | undefined;
+  children: any;
+}) => {
   const [connectStatus, setConnectStatus] = useState(0);
+  const [authentication, setAuthentication] = useState<null | {
+    challenge: string;
+    salt: string;
+  }>();
   const webSocketManager = useRef(
-    new WebSocketManager("ws://localhost:4455")
+    new WebSocketManager(`ws://localhost:${port}`)
   ).current;
 
   useEffect(() => {
@@ -28,20 +55,33 @@ export const WebSocketProvider = ({ children }: { children: any }) => {
     webSocketManager.connect({
       onOpen: () => {
         setConnectStatus(200);
-        console.log("Connected!");
       },
       onMessage: (message: any) => {
-        if (message.op === 2 && message.d.authentication) {
+        if (message.op === 0 && message.d.authentication) {
+          setAuthentication(message.d.authentication);
+          if (!password) {
+            console.log("Authentication required, but password field is null");
+            return;
+          }
+          webSocketManager.sendMessage({
+            op: 1,
+            d: {
+              rpcVersion: 1,
+              authentication: generateAuthHash(
+                password,
+                message.d.authentication.salt,
+                message.d.authentication.challenge
+              ),
+            },
+          });
+        }
+        if (message.op === 2) {
           setConnectStatus(201);
           console.log("Authentication success!");
         }
       },
-      onError: (error: any) => {
-        console.error("WebSocket 에러:", error);
-      },
-      onClose: () => {
-        console.log("WebSocket 연결이 닫혔습니다.");
-      },
+      onError: (error: any) => {},
+      onClose: () => {},
     });
 
     // 컴포넌트 언마운트 시 연결 해제

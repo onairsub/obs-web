@@ -37,4 +37,6 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## References
 
-https://eundol1113.tistory.com/800
+- [File Drag&Drop](https://eundol1113.tistory.com/800)
+
+- [OBS WebSocket API Document](https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md#Requests)
