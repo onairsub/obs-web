@@ -85,6 +85,7 @@ export const WebSocketProvider = ({
 
   useEffect(() => {
     // WebSocket 연결 설정
+    webSocketManager.url = `ws://localhost:${port}`;
     webSocketManager.connect({
       onOpen: () => {
         setConnectStatus(200);
@@ -132,7 +133,7 @@ export const WebSocketProvider = ({
     return () => {
       webSocketManager.disconnect();
     };
-  }, [webSocketManager, password]);
+  }, [webSocketManager, password, port]);
 
   return (
     <WebSocketContext.Provider
