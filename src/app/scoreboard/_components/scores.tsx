@@ -135,11 +135,12 @@ const StyledWrapper = styled.div`
   }
 
   > span {
-    text-align: center;
-    width: 100px; 
+    text-align: center; 
   }
 
   button {
     font-size: 16px;
+    width: 200px;
+    height: 80px;
   }
 `
