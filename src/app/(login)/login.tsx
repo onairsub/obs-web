@@ -1,10 +1,10 @@
 import styled from "@emotion/styled";
 import { Button, TextField } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export const Login = (props: {authStatus: any, setAuthStatus: any}) => {
-  const [port, setPort] = useState(props.authStatus.port);
-  const [password, setPassword] = useState(props.authStatus.password);
+  const [port, setPort] = useState('');
+  const [password, setPassword] = useState('');
 
   const connectOBS = () => {
     props.setAuthStatus({
@@ -12,13 +12,18 @@ export const Login = (props: {authStatus: any, setAuthStatus: any}) => {
     })
   }
 
+  useEffect(()=>{
+    setPort(props.authStatus.port)
+    setPassword(props.authStatus.password)
+  }, [props.authStatus])
+
   return (
     <StyledWrapper>
       <h1>OBS Controller</h1>
       <div><TextField value={port} onChange={(e) => setPort(e.target.value)} sx={{width: '400px'}} label="port"/></div>
       <div><TextField value={password} onChange={(e) => setPassword(e.target.value)} sx={{width: '400px'}} label="password"/></div>
       <div><Button onClick={connectOBS} variant='outlined'>CONNECT OBS</Button></div>
-      <div></div>
+      <div><a href="https://github.com/obsproject/obs-studio/releases/tag/28.1.2">INSTALL OBS</a></div>
     </StyledWrapper>
   );
 };
@@ -41,11 +46,18 @@ const StyledWrapper = styled.div`
     width: 400px;
   }
   
-  > div:last-of-type {
-    height: 200px; 
-  }
+  // > div:last-of-type {
+  //   height: 200px; 
+  // }
 
   button {
     width: 400px;
+  }
+
+  a {
+    display: block;
+    width: 100%;
+    text-align: center;
+    color: #999999
   }
 `;
