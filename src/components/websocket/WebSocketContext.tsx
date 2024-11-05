@@ -41,11 +41,17 @@ const WebSocketContext = createContext<{
   authentication: Authentication;
   connectStatus: number;
   recentResponse: RecentResponse;
+  responseBuffer: RecentResponse[];
+  clearBuffer: () => void;
+  popBuffer: null | (() => RecentResponse);
 }>({
   webSocketManager: null,
   authentication: null,
   connectStatus: 0,
   recentResponse: null,
+  responseBuffer: [],
+  clearBuffer: () => {},
+  popBuffer: null,
 });
 
 export const WebSocketProvider = ({
@@ -60,9 +66,22 @@ export const WebSocketProvider = ({
   const [connectStatus, setConnectStatus] = useState(0);
   const [authentication, setAuthentication] = useState<Authentication>(null);
   const [recentResponse, setRecentResponse] = useState<RecentResponse>(null);
+  const [responseBuffer, setResponseBuffer] = useState<RecentResponse[]>([]);
   const webSocketManager = useRef(
     new WebSocketManager(`ws://localhost:${port}`)
   ).current;
+
+  const clearBuffer = () => {
+    if (responseBuffer.length === 0) return null;
+    setResponseBuffer([]);
+  };
+
+  const popBuffer = () => {
+    if (responseBuffer.length === 0) return null;
+    const res = responseBuffer[0];
+    setResponseBuffer((prev) => prev.slice(1));
+    return res;
+  };
 
   useEffect(() => {
     // WebSocket 연결 설정
@@ -88,6 +107,13 @@ export const WebSocketProvider = ({
               ),
             },
           });
+        } else if (message.op === 0) {
+          webSocketManager.sendMessage({
+            op: 1,
+            d: {
+              rpcVersion: 1,
+            },
+          });
         }
         if (message.op === 2) {
           setConnectStatus(201);
@@ -96,6 +122,7 @@ export const WebSocketProvider = ({
         if (message.op === 7) {
           console.log("response");
           setRecentResponse(message.d);
+          setResponseBuffer((prev) => [...prev, message.d]);
         }
       },
       onError: (error: any) => {},
@@ -114,6 +141,9 @@ export const WebSocketProvider = ({
         authentication,
         connectStatus,
         recentResponse,
+        responseBuffer,
+        clearBuffer,
+        popBuffer,
       }}
     >
       {children}
