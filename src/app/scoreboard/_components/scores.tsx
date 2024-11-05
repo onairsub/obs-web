@@ -20,6 +20,7 @@ export const Scores = () => {
     popBuffer,
   } = useWebSocket();
   const [scores, setScores] = useState([0, 0]);
+  const [ready, setReady] = useState([false, false]);
 
   const filterScore = (score: number) => {
     if(score < 0) return 0;
@@ -70,8 +71,10 @@ export const Scores = () => {
   }, [connectStatus]);
 
   useEffect(() => {
-    SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
-    SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
+    if(ready[0] && ready[1]) {
+      SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
+      SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
+    }
   }, [scores]);
 
   useEffect(() => {
@@ -82,15 +85,20 @@ export const Scores = () => {
 
     console.log("res: ", res);
     if (res?.requestId === SCORE_A_ID)
+    {
       setScores((prev) => [
         parseInt(res.responseData.inputSettings.text),
         prev[1],
       ]);
-    if (res?.requestId === SCORE_B_ID)
+      setReady((prev) => [true, prev[1]]);
+    }
+    if (res?.requestId === SCORE_B_ID) {
       setScores((prev) => [
         prev[0],
         parseInt(res.responseData.inputSettings.text),
       ]);
+      setReady((prev) => [prev[0], true]);
+    }
   }, [responseBuffer, popBuffer]);
 
   return (
