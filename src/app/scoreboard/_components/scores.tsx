@@ -1,6 +1,7 @@
 "use client";
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
+import styled from "@emotion/styled";
 import { Button } from "@mui/material";
 import { useEffect, useState } from "react";
 
@@ -19,6 +20,11 @@ export const Scores = () => {
     popBuffer,
   } = useWebSocket();
   const [scores, setScores] = useState([0, 0]);
+
+  const filterScore = (score: number) => {
+    if(score < 0) return 0;
+    return score;
+  }
 
   const GetInputSettings = (
     inputName: string,
@@ -51,10 +57,10 @@ export const Scores = () => {
 
   const ScoreAdd = (id: string, inc: number) => {
     if (id === SCORE_A_ID) {
-      setScores((prev) => [prev[0] + inc, prev[1]]);
+      setScores((prev) => [filterScore(prev[0] + inc), prev[1]]);
     }
     if (id === SCORE_B_ID) {
-      setScores((prev) => [prev[0], prev[1] + inc]);
+      setScores((prev) => [prev[0], filterScore(prev[1] + inc)]);
     }
   };
 
@@ -72,6 +78,7 @@ export const Scores = () => {
     if (popBuffer === null) return;
     const res = popBuffer();
     if (res === null) return;
+    if(res.requestStatus.code !== 100) return;
 
     console.log("res: ", res);
     if (res?.requestId === SCORE_A_ID)
@@ -87,13 +94,44 @@ export const Scores = () => {
   }, [responseBuffer, popBuffer]);
 
   return (
-    <div>
-      <Button onClick={() => ScoreAdd(SCORE_A_ID, 1)}>A UP</Button>
-      <Button onClick={() => ScoreAdd(SCORE_A_ID, -1)}>A DOWN</Button>
-      <Button onClick={() => ScoreAdd(SCORE_B_ID, 1)}>B UP</Button>
-      <Button onClick={() => ScoreAdd(SCORE_B_ID, -1)}>B DOWN</Button>
-      <div>A score: {scores[0]}</div>
-      <div>B score: {scores[1]}</div>
-    </div>
+    <StyledWrapper>
+      <div>
+        <Button onClick={() => ScoreAdd(SCORE_A_ID, 1)}>A UP</Button>
+        <div>{scores[0]}</div>
+        <Button onClick={() => ScoreAdd(SCORE_A_ID, -1)}>A DOWN</Button>
+      </div>
+      <span>:</span>
+      <div>
+        <Button onClick={() => ScoreAdd(SCORE_B_ID, 1)}>B UP</Button>
+        <div>{scores[1]}</div>
+        <Button onClick={() => ScoreAdd(SCORE_B_ID, -1)}>B DOWN</Button>
+      </div>
+    </StyledWrapper>
   );
 };
+
+const StyledWrapper = styled.div`
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+
+  font-size: 128px;
+  font-weight: bold;
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  > span {
+    text-align: center;
+    width: 100px; 
+  }
+
+  button {
+    font-size: 16px;
+  }
+`
