@@ -1,13 +1,14 @@
 "use client";
 
 import { WebSocketProvider } from "@/components/websocket/WebSocketContext";
-import ProviderTest from "./(test)/ProviderTest";
-import { Root } from "./root";
+import { Scores } from "./_components/scores";
 
-export default function Home() {
+const Scoreboard = () => {
   return (
     <WebSocketProvider>
-      <Root />
+      <Scores />
     </WebSocketProvider>
   );
-}
+};
+
+export default Scoreboard;
