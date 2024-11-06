@@ -15,6 +15,17 @@ const SCORE_B_NAME = "score_B";
 const SET_B_NAME = "set_B";
 const SCORE_B_ID = "score_B";
 
+type Scene = {
+  sceneName: string;
+  sceneUuid: string;
+};
+
+type SceneItem = {
+  sourceName: string;
+  sourceUuid: string;
+  sceneItemId: number;
+};
+
 export const Scores = () => {
   const {
     webSocketManager,
@@ -32,7 +43,7 @@ export const Scores = () => {
   const [tmpTitle, setTmpTitle] = useState("");
   const [ready, setReady] = useState([false, false]);
   const [cache, setCache] = useState<
-    Map<string, { sceneItemId: string; sceneName: string }>
+    Map<string, { sceneItemId: number; sceneName: string }>
   >(new Map());
   const [sceneItems, setSceneItems] = useState<{ [key: string]: any }>({});
 
@@ -158,7 +169,7 @@ export const Scores = () => {
     if (cache.has(inputName)) return cache.get(inputName);
     else {
       Object.keys(sceneItems).forEach((key) => {
-        sceneItems[key].forEach((e) => {
+        sceneItems[key].forEach((e: SceneItem) => {
           if (e.sourceName === inputName) {
             setCache((prev) => {
               const newMap = new Map(prev);
@@ -204,14 +215,14 @@ export const Scores = () => {
       console.log("found A: ", result);
       if (result === null || result === undefined) break;
       const { sceneName, sceneItemId } = result;
-      SetSceneItemEnabled(sceneName, parseInt(sceneItemId), sets[0] > i);
+      SetSceneItemEnabled(sceneName, sceneItemId, sets[0] > i);
     }
     for (let i = 0; i < 3; i++) {
       const result = FindSceneItem(`${SET_B_NAME}_${i + 1}`);
       console.log("found B: ", result);
       if (result === null || result === undefined) break;
       const { sceneName, sceneItemId } = result;
-      SetSceneItemEnabled(sceneName, parseInt(sceneItemId), sets[1] > i);
+      SetSceneItemEnabled(sceneName, sceneItemId, sets[1] > i);
     }
   }, [sets, cache]);
 
@@ -238,7 +249,7 @@ export const Scores = () => {
       setReady((prev) => [prev[0], true]);
     }
     if (res.requestId === "GETSCENEDATA") {
-      res.responseData.scenes.forEach((e) => {
+      res.responseData.scenes.forEach((e: Scene) => {
         GetSceneItemList(e.sceneName, e.sceneName);
       });
     }
