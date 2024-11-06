@@ -2,7 +2,7 @@
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
 import styled from "@emotion/styled";
-import { Button, TextField } from "@mui/material";
+import { Button, TextField, Typography } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useLocalStorage } from "usehooks-ts";
 
@@ -29,6 +29,7 @@ export const Scores = () => {
   const [sets, setSets] = useLocalStorage("OBS_SETS", [0, 0]);
   const [currentSet, setCurrentSet] = useLocalStorage("OBS_CURRENT_SET", 1);
 
+  const [tmpTitle, setTmpTitle] = useState("");
   const [ready, setReady] = useState([false, false]);
   const [cache, setCache] = useState<
     Map<string, { sceneItemId: string; sceneName: string }>
@@ -38,6 +39,19 @@ export const Scores = () => {
   const filterScore = (score: number) => {
     if (score < 0) return 0;
     return score;
+  };
+
+  const SetCurrentProgramScene = (sceneName: string) => {
+    webSocketManager?.sendMessage({
+      op: 6,
+      d: {
+        requestId: "123456789",
+        requestType: "SetCurrentProgramScene",
+        requestData: {
+          sceneName,
+        },
+      },
+    });
   };
 
   const GetSceneList = (requestId: string = "1234567") => {
@@ -161,24 +175,23 @@ export const Scores = () => {
     }
     return null;
   };
-  useEffect(() => {
-    GetSceneList("GETSCENEDATA");
-  }, []);
 
   useEffect(() => {
-    GetInputSettings(SCORE_A_NAME, SCORE_A_ID);
-    GetInputSettings(SCORE_B_NAME, SCORE_B_ID);
+    // GetInputSettings(SCORE_A_NAME, SCORE_A_ID);
+    // GetInputSettings(SCORE_B_NAME, SCORE_B_ID);
+    GetSceneList("GETSCENEDATA");
   }, [connectStatus]);
 
   useEffect(() => {
     SetInputSettings(TITLE_NAME, { text: title });
+    setTmpTitle(title);
   }, [title]);
 
   useEffect(() => {
-    if (ready[0] && ready[1]) {
-      SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
-      SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
-    }
+    // if (ready[0] && ready[1]) {
+    SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
+    SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
+    // }
   }, [scores]);
 
   useEffect(() => {
@@ -238,40 +251,86 @@ export const Scores = () => {
   }, [responseBuffer, popBuffer]);
 
   return (
-    <StyledWrapper>
-      <TextField
-        value={title}
-        label="title"
-        onChange={(e) => setTitle(e.target.value)}
-      />
-      <ScoreboardWrapper>
-        <div>
-          <Button onClick={() => ScoreAdd(SCORE_A_ID, 1)}>A UP</Button>
-          <div>{scores[0]}</div>
-          <Button onClick={() => ScoreAdd(SCORE_A_ID, -1)}>A DOWN</Button>
-        </div>
-        <span>:</span>
-        <div>
-          <Button onClick={() => ScoreAdd(SCORE_B_ID, 1)}>B UP</Button>
-          <div>{scores[1]}</div>
-          <Button onClick={() => ScoreAdd(SCORE_B_ID, -1)}>B DOWN</Button>
-        </div>
-      </ScoreboardWrapper>
-      <Button variant="outlined" onClick={FinishSet}>
-        finish set
-      </Button>
-      <Button variant="outlined" onClick={ResetScore}>
-        reset score
-      </Button>
-      <Button variant="outlined" onClick={ResetAll}>
-        reset all
-      </Button>
-    </StyledWrapper>
+    <PageWrapper>
+      <SidebarWrapper>
+        <Typography
+          sx={{
+            textAlign: "center",
+            marginBottom: "16px",
+            fontWeight: "bold",
+          }}
+        >
+          Scenes
+        </Typography>
+        {Object.keys(sceneItems).map((sceneName) => (
+          <Button
+            key={sceneName}
+            onClick={() => SetCurrentProgramScene(sceneName)}
+          >
+            {sceneName}
+          </Button>
+        ))}
+      </SidebarWrapper>
+      <StyledWrapper>
+        <TextField
+          value={tmpTitle}
+          label="title"
+          onChange={(e) => setTmpTitle(e.target.value)}
+          onBlur={() => setTitle(tmpTitle)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              (event.target as HTMLInputElement).blur(); // Enter 키를 눌렀을 때 blur 호출
+            }
+          }}
+        />
+        <ScoreboardWrapper>
+          <div>
+            <Button onClick={() => ScoreAdd(SCORE_A_ID, 1)}>A UP</Button>
+            <div>{scores[0]}</div>
+            <Button onClick={() => ScoreAdd(SCORE_A_ID, -1)}>A DOWN</Button>
+          </div>
+          <span>:</span>
+          <div>
+            <Button onClick={() => ScoreAdd(SCORE_B_ID, 1)}>B UP</Button>
+            <div>{scores[1]}</div>
+            <Button onClick={() => ScoreAdd(SCORE_B_ID, -1)}>B DOWN</Button>
+          </div>
+        </ScoreboardWrapper>
+        <div>set score</div>
+        <div>{`${sets[0]} : ${sets[1]}`}</div>
+        <Button sx={{ width: "200px" }} variant="outlined" onClick={FinishSet}>
+          finish set
+        </Button>
+        <Button sx={{ width: "200px" }} variant="outlined" onClick={ResetScore}>
+          reset score
+        </Button>
+        <Button sx={{ width: "200px" }} variant="outlined" onClick={ResetAll}>
+          reset all
+        </Button>
+      </StyledWrapper>
+    </PageWrapper>
   );
 };
 
+const PageWrapper = styled.div`
+  display: flex;
+`;
+
+const SidebarWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  width: 200px;
+  background-color: #efefef;
+  justify-content: center;
+  button: {
+    width: 100%;
+  }
+`;
+
 const StyledWrapper = styled.div`
   height: 100vh;
+  min-height: 500px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -284,7 +343,7 @@ const ScoreboardWrapper = styled.div`
   justify-content: center;
   align-items: center;
 
-  font-size: 128px;
+  font-size: 32px;
   font-weight: bold;
 
   > div {
