@@ -2,12 +2,17 @@
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
 import styled from "@emotion/styled";
-import { Button } from "@mui/material";
+import { Button, TextField } from "@mui/material";
 import { useEffect, useState } from "react";
+import { useLocalStorage } from "usehooks-ts";
 
+const TITLE_NAME = "title";
+const SET_NAME = "set";
 const SCORE_A_NAME = "score_A";
+const SET_A_NAME = "set_A";
 const SCORE_A_ID = "score_A";
 const SCORE_B_NAME = "score_B";
+const SET_B_NAME = "set_B";
 const SCORE_B_ID = "score_B";
 
 export const Scores = () => {
@@ -19,13 +24,47 @@ export const Scores = () => {
     clearBuffer,
     popBuffer,
   } = useWebSocket();
-  const [scores, setScores] = useState([0, 0]);
+  const [title, setTitle] = useLocalStorage("OBS_TITLE", "서울대배 8강 경기");
+  const [scores, setScores] = useLocalStorage("OBS_SCORE", [0, 0]);
+  const [sets, setSets] = useLocalStorage("OBS_SETS", [0, 0]);
+  const [currentSet, setCurrentSet] = useLocalStorage("OBS_CURRENT_SET", 1);
+
   const [ready, setReady] = useState([false, false]);
+  const [cache, setCache] = useState<
+    Map<string, { sceneItemId: string; sceneName: string }>
+  >(new Map());
+  const [sceneItems, setSceneItems] = useState<{ [key: string]: any }>({});
 
   const filterScore = (score: number) => {
-    if(score < 0) return 0;
+    if (score < 0) return 0;
     return score;
-  }
+  };
+
+  const GetSceneList = (requestId: string = "1234567") => {
+    webSocketManager?.sendMessage({
+      op: 6,
+      d: {
+        requestId,
+        requestType: "GetSceneList",
+      },
+    });
+  };
+
+  const GetSceneItemList = (
+    requestId: string = "1234567",
+    sceneName: string
+  ) => {
+    webSocketManager?.sendMessage({
+      op: 6,
+      d: {
+        requestId,
+        requestType: "GetSceneItemList",
+        requestData: {
+          sceneName,
+        },
+      },
+    });
+  };
 
   const GetInputSettings = (
     inputName: string,
@@ -56,6 +95,25 @@ export const Scores = () => {
     });
   };
 
+  const SetSceneItemEnabled = (
+    sceneName: string,
+    sceneItemId: number,
+    sceneItemEnabled: boolean
+  ) => {
+    webSocketManager?.sendMessage({
+      op: 6,
+      d: {
+        requestId: "1234567",
+        requestType: "SetSceneItemEnabled",
+        requestData: {
+          sceneName,
+          sceneItemId,
+          sceneItemEnabled,
+        },
+      },
+    });
+  };
+
   const ScoreAdd = (id: string, inc: number) => {
     if (id === SCORE_A_ID) {
       setScores((prev) => [filterScore(prev[0] + inc), prev[1]]);
@@ -65,65 +123,166 @@ export const Scores = () => {
     }
   };
 
+  const FinishSet = () => {
+    setCurrentSet((prev) => prev + 1);
+    if (scores[0] > scores[1]) setSets([sets[0] + 1, sets[1]]);
+    if (scores[0] < scores[1]) setSets([sets[0], sets[1] + 1]);
+    ResetScore();
+  };
+
+  const ResetScore = () => {
+    setScores([0, 0]);
+  };
+
+  const ResetAll = () => {
+    setScores([0, 0]);
+    setSets([0, 0]);
+    setCurrentSet(1);
+  };
+
+  const FindSceneItem = (inputName: string) => {
+    if (cache.has(inputName)) return cache.get(inputName);
+    else {
+      Object.keys(sceneItems).forEach((key) => {
+        sceneItems[key].forEach((e) => {
+          if (e.sourceName === inputName) {
+            setCache((prev) => {
+              const newMap = new Map(prev);
+              newMap.set(inputName, {
+                sceneName: key,
+                sceneItemId: e.sceneItemId,
+              });
+              return newMap;
+            });
+            return e.sceneItemId;
+          }
+        });
+      });
+    }
+    return null;
+  };
+  useEffect(() => {
+    GetSceneList("GETSCENEDATA");
+  }, []);
+
   useEffect(() => {
     GetInputSettings(SCORE_A_NAME, SCORE_A_ID);
     GetInputSettings(SCORE_B_NAME, SCORE_B_ID);
   }, [connectStatus]);
 
   useEffect(() => {
-    if(ready[0] && ready[1]) {
+    SetInputSettings(TITLE_NAME, { text: title });
+  }, [title]);
+
+  useEffect(() => {
+    if (ready[0] && ready[1]) {
       SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
       SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
     }
   }, [scores]);
 
   useEffect(() => {
+    SetInputSettings(SET_NAME, { text: `${currentSet} SET` });
+  }, [currentSet]);
+
+  useEffect(() => {
+    for (let i = 0; i < 3; i++) {
+      const result = FindSceneItem(`${SET_A_NAME}_${i + 1}`);
+      console.log("found A: ", result);
+      if (result === null || result === undefined) break;
+      const { sceneName, sceneItemId } = result;
+      SetSceneItemEnabled(sceneName, parseInt(sceneItemId), sets[0] > i);
+    }
+    for (let i = 0; i < 3; i++) {
+      const result = FindSceneItem(`${SET_B_NAME}_${i + 1}`);
+      console.log("found B: ", result);
+      if (result === null || result === undefined) break;
+      const { sceneName, sceneItemId } = result;
+      SetSceneItemEnabled(sceneName, parseInt(sceneItemId), sets[1] > i);
+    }
+  }, [sets, cache]);
+
+  // response handle
+  useEffect(() => {
     if (popBuffer === null) return;
     const res = popBuffer();
     if (res === null) return;
-    if(res.requestStatus.code !== 100) return;
+    if (res.requestStatus.code !== 100) return;
 
     console.log("res: ", res);
-    if (res?.requestId === SCORE_A_ID)
-    {
+    if (res.requestId === SCORE_A_ID) {
       setScores((prev) => [
         parseInt(res.responseData.inputSettings.text),
         prev[1],
       ]);
       setReady((prev) => [true, prev[1]]);
     }
-    if (res?.requestId === SCORE_B_ID) {
+    if (res.requestId === SCORE_B_ID) {
       setScores((prev) => [
         prev[0],
         parseInt(res.responseData.inputSettings.text),
       ]);
       setReady((prev) => [prev[0], true]);
     }
+    if (res.requestId === "GETSCENEDATA") {
+      res.responseData.scenes.forEach((e) => {
+        GetSceneItemList(e.sceneName, e.sceneName);
+      });
+    }
+    if (res.requestType === "GetSceneItemList") {
+      setSceneItems((prev) => ({
+        ...prev,
+        [res.requestId]: res.responseData.sceneItems,
+      }));
+    }
   }, [responseBuffer, popBuffer]);
 
   return (
     <StyledWrapper>
-      <div>
-        <Button onClick={() => ScoreAdd(SCORE_A_ID, 1)}>A UP</Button>
-        <div>{scores[0]}</div>
-        <Button onClick={() => ScoreAdd(SCORE_A_ID, -1)}>A DOWN</Button>
-      </div>
-      <span>:</span>
-      <div>
-        <Button onClick={() => ScoreAdd(SCORE_B_ID, 1)}>B UP</Button>
-        <div>{scores[1]}</div>
-        <Button onClick={() => ScoreAdd(SCORE_B_ID, -1)}>B DOWN</Button>
-      </div>
+      <TextField
+        value={title}
+        label="title"
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <ScoreboardWrapper>
+        <div>
+          <Button onClick={() => ScoreAdd(SCORE_A_ID, 1)}>A UP</Button>
+          <div>{scores[0]}</div>
+          <Button onClick={() => ScoreAdd(SCORE_A_ID, -1)}>A DOWN</Button>
+        </div>
+        <span>:</span>
+        <div>
+          <Button onClick={() => ScoreAdd(SCORE_B_ID, 1)}>B UP</Button>
+          <div>{scores[1]}</div>
+          <Button onClick={() => ScoreAdd(SCORE_B_ID, -1)}>B DOWN</Button>
+        </div>
+      </ScoreboardWrapper>
+      <Button variant="outlined" onClick={FinishSet}>
+        finish set
+      </Button>
+      <Button variant="outlined" onClick={ResetScore}>
+        reset score
+      </Button>
+      <Button variant="outlined" onClick={ResetAll}>
+        reset all
+      </Button>
     </StyledWrapper>
   );
 };
 
 const StyledWrapper = styled.div`
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+`;
+
+const ScoreboardWrapper = styled.div`
   display: flex;
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  height: 100vh;
 
   font-size: 128px;
   font-weight: bold;
@@ -135,7 +294,7 @@ const StyledWrapper = styled.div`
   }
 
   > span {
-    text-align: center; 
+    text-align: center;
   }
 
   button {
@@ -143,4 +302,4 @@ const StyledWrapper = styled.div`
     width: 200px;
     height: 80px;
   }
-`
+`;
