@@ -3,6 +3,11 @@
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
 import { Button } from "@mui/material";
 import { useEffect, useState } from "react";
+import {
+  AnimateItem,
+  AnimateWithKeyframe,
+  TimeFunction,
+} from "./_utils/AnimateItem";
 
 type Scene = {
   sceneName: string;
@@ -147,6 +152,87 @@ export default function ProviderTest() {
           SetInputSettings {"=>"} {item.inputName}
         </Button>
       ))}
+      <Button
+        variant="outlined"
+        onClick={() =>
+          AnimateItem(
+            webSocketManager,
+            "장면",
+            1,
+            0,
+            0,
+            960,
+            540,
+            500,
+            TimeFunction.EASE_OUT
+          )
+        }
+      >
+        {" "}
+        ANIMATION{" "}
+      </Button>
+      <Button
+        variant="outlined"
+        onClick={() =>
+          AnimateWithKeyframe(webSocketManager, "장면", 1, [
+            {
+              timeCode: 0,
+              x: 960,
+              y: 1080,
+              timeFunction: TimeFunction.EASE_OUT,
+            },
+            {
+              timeCode: 300,
+              x: 960,
+              y: 240,
+              timeFunction: TimeFunction.EASE_IN,
+            },
+            {
+              timeCode: 500,
+              x: 960,
+              y: 540,
+            },
+          ])
+        }
+      >
+        {" "}
+        ANIMATION2{" "}
+      </Button>
+      <Button
+        variant="outlined"
+        onClick={() => {
+          webSocketManager?.sendMessage({
+            op: 6,
+            d: {
+              requestId: "1234567",
+              requestType: "SetSceneItemEnabled",
+              requestData: {
+                sceneName: "장면",
+                sceneItemId: 2,
+                sceneItemEnabled: false,
+              },
+            },
+          });
+          setTimeout(
+            () =>
+              webSocketManager?.sendMessage({
+                op: 6,
+                d: {
+                  requestId: "1234567",
+                  requestType: "SetSceneItemEnabled",
+                  requestData: {
+                    sceneName: "장면",
+                    sceneItemId: 2,
+                    sceneItemEnabled: true,
+                  },
+                },
+              }),
+            50
+          );
+        }}
+      >
+        restart
+      </Button>
     </div>
   );
 }
