@@ -182,13 +182,13 @@ export default function ProviderTest() {
               timeFunction: TimeFunction.EASE_OUT,
             },
             {
-              timeCode: 500,
+              timeCode: 300,
               x: 960,
               y: 240,
               timeFunction: TimeFunction.EASE_IN,
             },
             {
-              timeCode: 800,
+              timeCode: 500,
               x: 960,
               y: 540,
             },
