@@ -1,6 +1,7 @@
 "use client";
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
+import { StatusCode } from "@/constants/statusCode";
 import styled from "@emotion/styled";
 import {
   Box,
@@ -28,6 +29,9 @@ const TEAM_B_NAME = "team_B";
 const SCORE_B_NAME = "score_B";
 const SET_B_NAME = "set_B";
 const SCORE_B_ID = "score_B";
+
+const MATCH_POINT_NAME = "match_point";
+const SET_POINT_NAME = "set_point";
 
 type Scene = {
   sceneName: string;
@@ -61,6 +65,7 @@ const Scores = () => {
     "연세대",
     "고려대",
   ]);
+  const [setList] = useLocalStorage("OBS_SET_LIST", [10, 7, 5]);
 
   const [title, setTitle] = useLocalStorage("OBS_TITLE", "서울대배 8강 경기");
   const [teamA, setTeamA] = useLocalStorage("OBS_TEAM_A", "서울대");
@@ -224,52 +229,132 @@ const Scores = () => {
     setTeamB(teamA);
   };
 
+  enum RoundType {
+    NORMAL,
+    SET_POINT,
+    MATCH_POINT,
+  }
+
+  const CheckRoundType = () => {
+    if (
+      scores[0] !== scores[1] &&
+      (scores[0] >= setList[currentSet - 1] - 1 ||
+        scores[1] >= setList[currentSet - 1] - 1)
+    ) {
+      if (scores[0] > scores[1]) {
+        if (sets[0] + 1 > setList.length / 2) {
+          return RoundType.MATCH_POINT;
+        } else {
+          return RoundType.SET_POINT;
+        }
+      } else {
+        if (sets[1] + 1 > setList.length / 2) {
+          return RoundType.MATCH_POINT;
+        } else {
+          return RoundType.SET_POINT;
+        }
+      }
+    } else return RoundType.NORMAL;
+  };
+
   useEffect(() => {
     // GetInputSettings(SCORE_A_NAME, SCORE_A_ID);
     // GetInputSettings(SCORE_B_NAME, SCORE_B_ID);
-    GetSceneList("GETSCENEDATA");
+    if (connectStatus === StatusCode.AUTHENTICATED)
+      GetSceneList("GETSCENEDATA");
   }, [connectStatus]);
 
   useEffect(() => {
-    SetInputSettings(TEAM_A_NAME, { text: teamA });
-  }, [teamA]);
+    if (connectStatus === StatusCode.AUTHENTICATED)
+      SetInputSettings(TEAM_A_NAME, { text: teamA });
+  }, [teamA, connectStatus]);
 
   useEffect(() => {
-    SetInputSettings(TEAM_B_NAME, { text: teamB });
-  }, [teamB]);
+    if (connectStatus === StatusCode.AUTHENTICATED)
+      SetInputSettings(TEAM_B_NAME, { text: teamB });
+  }, [teamB, connectStatus]);
 
   useEffect(() => {
-    SetInputSettings(TITLE_NAME, { text: title });
-    setTmpTitle(title);
-  }, [title]);
-
-  useEffect(() => {
-    // if (ready[0] && ready[1]) {
-    SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
-    SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
-    // }
-  }, [scores]);
-
-  useEffect(() => {
-    SetInputSettings(SET_NAME, { text: `${currentSet} SET` });
-  }, [currentSet]);
-
-  useEffect(() => {
-    for (let i = 0; i < 3; i++) {
-      const result = FindSceneItem(`${SET_A_NAME}_${i + 1}`);
-      console.log("found A: ", result);
-      if (result === null || result === undefined) break;
-      const { sceneName, sceneItemId } = result;
-      SetSceneItemEnabled(sceneName, sceneItemId, sets[0] > i);
+    if (connectStatus === StatusCode.AUTHENTICATED) {
+      SetInputSettings(TITLE_NAME, { text: title });
+      setTmpTitle(title);
     }
-    for (let i = 0; i < 3; i++) {
-      const result = FindSceneItem(`${SET_B_NAME}_${i + 1}`);
-      console.log("found B: ", result);
-      if (result === null || result === undefined) break;
-      const { sceneName, sceneItemId } = result;
-      SetSceneItemEnabled(sceneName, sceneItemId, sets[1] > i);
+  }, [title, connectStatus]);
+
+  useEffect(() => {
+    if (connectStatus === StatusCode.AUTHENTICATED) {
+      // if (ready[0] && ready[1]) {
+      SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
+      SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
+      // }
+
+      const matchPoint = FindSceneItem(MATCH_POINT_NAME);
+      const setPoint = FindSceneItem(SET_POINT_NAME);
+
+      switch (CheckRoundType()) {
+        case RoundType.NORMAL:
+          SetSceneItemEnabled(
+            matchPoint?.sceneName || "unknown",
+            matchPoint?.sceneItemId || 0,
+            false
+          );
+          SetSceneItemEnabled(
+            setPoint?.sceneName || "unknown",
+            setPoint?.sceneItemId || 0,
+            false
+          );
+          break;
+        case RoundType.MATCH_POINT:
+          SetSceneItemEnabled(
+            matchPoint?.sceneName || "unknown",
+            matchPoint?.sceneItemId || 0,
+            true
+          );
+          SetSceneItemEnabled(
+            setPoint?.sceneName || "unknown",
+            setPoint?.sceneItemId || 0,
+            false
+          );
+          break;
+        case RoundType.SET_POINT:
+          SetSceneItemEnabled(
+            matchPoint?.sceneName || "unknown",
+            matchPoint?.sceneItemId || 0,
+            false
+          );
+          SetSceneItemEnabled(
+            setPoint?.sceneName || "unknown",
+            setPoint?.sceneItemId || 0,
+            true
+          );
+          break;
+      }
     }
-  }, [sets, cache]);
+  }, [scores, connectStatus]);
+
+  useEffect(() => {
+    if (connectStatus === StatusCode.AUTHENTICATED)
+      SetInputSettings(SET_NAME, { text: `${currentSet} SET` });
+  }, [currentSet, connectStatus]);
+
+  useEffect(() => {
+    if (connectStatus === StatusCode.AUTHENTICATED) {
+      for (let i = 0; i < 3; i++) {
+        const result = FindSceneItem(`${SET_A_NAME}_${i + 1}`);
+        console.log("found A: ", result);
+        if (result === null || result === undefined) break;
+        const { sceneName, sceneItemId } = result;
+        SetSceneItemEnabled(sceneName, sceneItemId, sets[0] > i);
+      }
+      for (let i = 0; i < 3; i++) {
+        const result = FindSceneItem(`${SET_B_NAME}_${i + 1}`);
+        console.log("found B: ", result);
+        if (result === null || result === undefined) break;
+        const { sceneName, sceneItemId } = result;
+        SetSceneItemEnabled(sceneName, sceneItemId, sets[1] > i);
+      }
+    }
+  }, [sets, cache, connectStatus]);
 
   // response handle
   useEffect(() => {
