@@ -128,7 +128,9 @@ export const WebSocketProvider = ({
         }
       },
       onError: (error: any) => {},
-      onClose: () => {},
+      onClose: () => {
+        setConnectStatus(StatusCode.UNAUTHORIZED);
+      },
     });
 
     return () => {
