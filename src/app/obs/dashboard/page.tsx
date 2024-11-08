@@ -5,6 +5,7 @@ import styled from "@emotion/styled";
 import {
   Box,
   Button,
+  Divider,
   FormControl,
   InputLabel,
   MenuItem,
@@ -12,6 +13,8 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLocalStorage } from "usehooks-ts";
 
@@ -37,7 +40,9 @@ type SceneItem = {
   sceneItemId: number;
 };
 
-export const Scores = () => {
+const Scores = () => {
+  const router = useRouter();
+
   const {
     webSocketManager,
     connectStatus,
@@ -212,6 +217,13 @@ export const Scores = () => {
     return null;
   };
 
+  const SwitchTeams = () => {
+    setSets((prev) => prev.toReversed());
+    setScores((prev) => prev.toReversed());
+    setTeamA(teamB);
+    setTeamB(teamA);
+  };
+
   useEffect(() => {
     // GetInputSettings(SCORE_A_NAME, SCORE_A_ID);
     // GetInputSettings(SCORE_B_NAME, SCORE_B_ID);
@@ -300,7 +312,7 @@ export const Scores = () => {
         <Typography
           sx={{
             textAlign: "center",
-            marginBottom: "16px",
+            marginBottom: "8px",
             fontWeight: "bold",
           }}
         >
@@ -314,6 +326,18 @@ export const Scores = () => {
             {sceneName}
           </Button>
         ))}
+        <Divider variant="middle" />
+        <Button
+          onClick={() => router.push("/obs/setting")}
+          sx={{
+            textAlign: "center",
+            marginTop: "32px",
+            fontWeight: "bold",
+            color: "#444444",
+          }}
+        >
+          Settings
+        </Button>
       </SidebarWrapper>
       <StyledWrapper>
         <FormControl>
@@ -321,13 +345,8 @@ export const Scores = () => {
           <Select
             value={title}
             label="경기 제목"
+            placeholder="경기 제목을 입력하세요"
             onChange={(e) => setTitle(e.target.value)}
-            // onBlur={() => setTitle(tmpTitle)}
-            // onKeyDown={(event) => {
-            //   if (event.key === "Enter") {
-            //     (event.target as HTMLInputElement).blur(); // Enter 키를 눌렀을 때 blur 호출
-            //   }
-            // }}
           >
             {titleList.map((e, idx) => (
               <MenuItem key={idx} value={e}>
@@ -351,7 +370,13 @@ export const Scores = () => {
               ))}
             </Select>
           </FormControl>
-          <img src="../../../../public/svg/autorenew.svg" />
+          <Image
+            onClick={SwitchTeams}
+            src="/autorenew.svg"
+            alt="switch"
+            width={32}
+            height={32}
+          />
           <FormControl>
             <InputLabel>B팀</InputLabel>
             <Select
@@ -396,6 +421,8 @@ export const Scores = () => {
     </PageWrapper>
   );
 };
+
+export default Scores;
 
 const PageWrapper = styled.div`
   display: flex;
