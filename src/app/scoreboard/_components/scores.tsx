@@ -2,15 +2,26 @@
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
 import styled from "@emotion/styled";
-import { Button, TextField, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { useEffect, useState } from "react";
 import { useLocalStorage } from "usehooks-ts";
 
 const TITLE_NAME = "title";
 const SET_NAME = "set";
+const TEAM_A_NAME = "team_A";
 const SCORE_A_NAME = "score_A";
 const SET_A_NAME = "set_A";
 const SCORE_A_ID = "score_A";
+const TEAM_B_NAME = "team_B";
 const SCORE_B_NAME = "score_B";
 const SET_B_NAME = "set_B";
 const SCORE_B_ID = "score_B";
@@ -35,7 +46,21 @@ export const Scores = () => {
     clearBuffer,
     popBuffer,
   } = useWebSocket();
+  const [titleList] = useLocalStorage("OBS_TITLE_LIST", [
+    "서울대배 8강 경기",
+    "서울대배 4강 경기",
+    "서울대배 결승전 경기",
+  ]);
+  const [teamList] = useLocalStorage("OBS_TEAM_LIST", [
+    "서울대",
+    "연세대",
+    "고려대",
+  ]);
+
   const [title, setTitle] = useLocalStorage("OBS_TITLE", "서울대배 8강 경기");
+  const [teamA, setTeamA] = useLocalStorage("OBS_TEAM_A", "서울대");
+  const [teamB, setTeamB] = useLocalStorage("OBS_TEAM_B", "연세대");
+
   const [scores, setScores] = useLocalStorage("OBS_SCORE", [0, 0]);
   const [sets, setSets] = useLocalStorage("OBS_SETS", [0, 0]);
   const [currentSet, setCurrentSet] = useLocalStorage("OBS_CURRENT_SET", 1);
@@ -194,6 +219,14 @@ export const Scores = () => {
   }, [connectStatus]);
 
   useEffect(() => {
+    SetInputSettings(TEAM_A_NAME, { text: teamA });
+  }, [teamA]);
+
+  useEffect(() => {
+    SetInputSettings(TEAM_B_NAME, { text: teamB });
+  }, [teamB]);
+
+  useEffect(() => {
     SetInputSettings(TITLE_NAME, { text: title });
     setTmpTitle(title);
   }, [title]);
@@ -283,17 +316,57 @@ export const Scores = () => {
         ))}
       </SidebarWrapper>
       <StyledWrapper>
-        <TextField
-          value={tmpTitle}
-          label="title"
-          onChange={(e) => setTmpTitle(e.target.value)}
-          onBlur={() => setTitle(tmpTitle)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              (event.target as HTMLInputElement).blur(); // Enter 키를 눌렀을 때 blur 호출
-            }
-          }}
-        />
+        <FormControl>
+          <InputLabel>경기 제목</InputLabel>
+          <Select
+            value={title}
+            label="경기 제목"
+            onChange={(e) => setTitle(e.target.value)}
+            // onBlur={() => setTitle(tmpTitle)}
+            // onKeyDown={(event) => {
+            //   if (event.key === "Enter") {
+            //     (event.target as HTMLInputElement).blur(); // Enter 키를 눌렀을 때 blur 호출
+            //   }
+            // }}
+          >
+            {titleList.map((e, idx) => (
+              <MenuItem key={idx} value={e}>
+                {e}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <TeamSelectWrapper>
+          <FormControl>
+            <InputLabel>A팀</InputLabel>
+            <Select
+              value={teamA}
+              label="A팀"
+              onChange={(e) => setTeamA(e.target.value)}
+            >
+              {teamList.map((e, idx) => (
+                <MenuItem key={idx} value={e}>
+                  {e}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <img src="../../../../public/svg/autorenew.svg" />
+          <FormControl>
+            <InputLabel>B팀</InputLabel>
+            <Select
+              value={teamB}
+              label="B팀"
+              onChange={(e) => setTeamB(e.target.value)}
+            >
+              {teamList.map((e, idx) => (
+                <MenuItem key={idx} value={e}>
+                  {e}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </TeamSelectWrapper>
         <ScoreboardWrapper>
           <div>
             <Button onClick={() => ScoreAdd(SCORE_A_ID, 1)}>A UP</Button>
@@ -309,7 +382,8 @@ export const Scores = () => {
         </ScoreboardWrapper>
         <div>set score</div>
         <div>{`${sets[0]} : ${sets[1]}`}</div>
-        <Button sx={{ width: "200px" }} variant="outlined" onClick={FinishSet}>
+        <Box sx={{ marginBottom: "16px" }} />
+        <Button sx={{ width: "200px" }} variant="contained" onClick={FinishSet}>
           finish set
         </Button>
         <Button sx={{ width: "200px" }} variant="outlined" onClick={ResetScore}>
@@ -336,6 +410,14 @@ const SidebarWrapper = styled.div`
   button: {
     width: 100%;
   }
+`;
+
+const TeamSelectWrapper = styled.div`
+  margin: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
 `;
 
 const StyledWrapper = styled.div`
@@ -369,7 +451,7 @@ const ScoreboardWrapper = styled.div`
 
   button {
     font-size: 16px;
-    width: 200px;
+    width: 150px;
     height: 80px;
   }
 `;
