@@ -9,6 +9,7 @@ import crypto from "crypto-js";
 
 // WebSocketManager 클래스 가져오기
 import WebSocketManager from "./WebSocketManager";
+import { StatusCode } from "@/constants/statusCode";
 
 type Authentication = null | {
   challenge: string;
@@ -88,7 +89,7 @@ export const WebSocketProvider = ({
     webSocketManager.url = `ws://localhost:${port}`;
     webSocketManager.connect({
       onOpen: () => {
-        setConnectStatus(200);
+        setConnectStatus(StatusCode.CONNECTED);
       },
       onMessage: (message: any) => {
         if (message.op === 0 && message.d.authentication) {
@@ -117,7 +118,7 @@ export const WebSocketProvider = ({
           });
         }
         if (message.op === 2) {
-          setConnectStatus(201);
+          setConnectStatus(StatusCode.AUTHENTICATED);
           console.log("Authentication success!");
         }
         if (message.op === 7) {

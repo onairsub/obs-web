@@ -37,7 +37,7 @@ type SceneItem = {
   sceneItemId: number;
 };
 
-export const Scores = () => {
+const Scores = () => {
   const {
     webSocketManager,
     connectStatus,
@@ -351,7 +351,7 @@ export const Scores = () => {
               ))}
             </Select>
           </FormControl>
-          <img src="../../../../public/svg/autorenew.svg" />
+          <img src="/autorenew.svg" />
           <FormControl>
             <InputLabel>B팀</InputLabel>
             <Select
@@ -396,6 +396,8 @@ export const Scores = () => {
     </PageWrapper>
   );
 };
+
+export default Scores;
 
 const PageWrapper = styled.div`
   display: flex;
