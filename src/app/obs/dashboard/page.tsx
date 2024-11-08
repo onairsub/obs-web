@@ -29,6 +29,9 @@ const SCORE_B_NAME = "score_B";
 const SET_B_NAME = "set_B";
 const SCORE_B_ID = "score_B";
 
+const MATCH_POINT_NAME = "match_point";
+const SET_POINT_NAME = "set_point";
+
 type Scene = {
   sceneName: string;
   sceneUuid: string;
@@ -61,6 +64,7 @@ const Scores = () => {
     "연세대",
     "고려대",
   ]);
+  const [setList] = useLocalStorage("OBS_SET_LIST", [10, 7, 5]);
 
   const [title, setTitle] = useLocalStorage("OBS_TITLE", "서울대배 8강 경기");
   const [teamA, setTeamA] = useLocalStorage("OBS_TEAM_A", "서울대");
@@ -224,6 +228,34 @@ const Scores = () => {
     setTeamB(teamA);
   };
 
+  enum RoundType {
+    NORMAL,
+    SET_POINT,
+    MATCH_POINT,
+  }
+
+  const CheckRoundType = () => {
+    if (
+      scores[0] !== scores[1] &&
+      (scores[0] >= setList[currentSet - 1] - 1 ||
+        scores[1] >= setList[currentSet - 1] - 1)
+    ) {
+      if (scores[0] > scores[1]) {
+        if (sets[0] + 1 > setList.length / 2) {
+          return RoundType.MATCH_POINT;
+        } else {
+          return RoundType.SET_POINT;
+        }
+      } else {
+        if (sets[1] + 1 > setList.length / 2) {
+          return RoundType.MATCH_POINT;
+        } else {
+          return RoundType.SET_POINT;
+        }
+      }
+    } else return RoundType.NORMAL;
+  };
+
   useEffect(() => {
     // GetInputSettings(SCORE_A_NAME, SCORE_A_ID);
     // GetInputSettings(SCORE_B_NAME, SCORE_B_ID);
@@ -248,6 +280,48 @@ const Scores = () => {
     SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
     SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
     // }
+
+    const matchPoint = FindSceneItem(MATCH_POINT_NAME);
+    const setPoint = FindSceneItem(SET_POINT_NAME);
+
+    switch (CheckRoundType()) {
+      case RoundType.NORMAL:
+        SetSceneItemEnabled(
+          matchPoint?.sceneName || "unknown",
+          matchPoint?.sceneItemId || 0,
+          false
+        );
+        SetSceneItemEnabled(
+          setPoint?.sceneName || "unknown",
+          setPoint?.sceneItemId || 0,
+          false
+        );
+        break;
+      case RoundType.MATCH_POINT:
+        SetSceneItemEnabled(
+          matchPoint?.sceneName || "unknown",
+          matchPoint?.sceneItemId || 0,
+          true
+        );
+        SetSceneItemEnabled(
+          setPoint?.sceneName || "unknown",
+          setPoint?.sceneItemId || 0,
+          false
+        );
+        break;
+      case RoundType.SET_POINT:
+        SetSceneItemEnabled(
+          matchPoint?.sceneName || "unknown",
+          matchPoint?.sceneItemId || 0,
+          false
+        );
+        SetSceneItemEnabled(
+          setPoint?.sceneName || "unknown",
+          setPoint?.sceneItemId || 0,
+          true
+        );
+        break;
+    }
   }, [scores]);
 
   useEffect(() => {
