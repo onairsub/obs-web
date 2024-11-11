@@ -5,19 +5,19 @@ import { useRouter } from "next/router";
 import React from "react";
 import { useLocalStorage } from "usehooks-ts";
 
-enum TeamSettingElementType {
+export enum TeamSettingElementType {
   TEXT,
   IMAGE,
   VIDEO,
 }
 
-type TeamSettingElement = {
+export type TeamSettingElement = {
   name: string;
   type: TeamSettingElementType;
   value: string;
 };
 
-const Properties = {
+export const Properties = {
   [TeamSettingElementType.TEXT]: "text",
   [TeamSettingElementType.IMAGE]: "file",
   [TeamSettingElementType.VIDEO]: "local_file",

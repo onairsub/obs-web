@@ -18,6 +18,11 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLocalStorage } from "usehooks-ts";
+import {
+  Properties,
+  TeamSettingElement,
+  TeamSettingElementType,
+} from "../team-setting/[id]/page";
 
 const TITLE_NAME = "title";
 const SET_NAME = "set";
@@ -70,6 +75,18 @@ const Scores = () => {
   const [title, setTitle] = useLocalStorage("OBS_TITLE", "서울대배 8강 경기");
   const [teamA, setTeamA] = useLocalStorage("OBS_TEAM_A", "서울대");
   const [teamB, setTeamB] = useLocalStorage("OBS_TEAM_B", "연세대");
+
+  const [teamSetting, setTeamSetting, clearTeamSetting] = useLocalStorage<{
+    [key: string]: TeamSettingElement[];
+  }>("OBS_TEAM_SETTINGS", {
+    서울대: [
+      {
+        name: "logo",
+        type: TeamSettingElementType.IMAGE,
+        value: "C:/Users/JihunSeo/Downloads/images.png",
+      },
+    ],
+  });
 
   const [scores, setScores] = useLocalStorage("OBS_SCORE", [0, 0]);
   const [sets, setSets] = useLocalStorage("OBS_SETS", [0, 0]);
@@ -174,6 +191,15 @@ const Scores = () => {
     });
   };
 
+  const GenerateInputSettings = (
+    type: TeamSettingElementType,
+    value: string
+  ) => {
+    return {
+      [Properties[type]]: value,
+    };
+  };
+
   const ScoreAdd = (id: string, inc: number) => {
     if (id === SCORE_A_ID) {
       setScores((prev) => [filterScore(prev[0] + inc), prev[1]]);
@@ -265,13 +291,25 @@ const Scores = () => {
   }, [connectStatus]);
 
   useEffect(() => {
-    if (connectStatus === StatusCode.AUTHENTICATED)
+    if (connectStatus === StatusCode.AUTHENTICATED) {
       SetInputSettings(TEAM_A_NAME, { text: teamA });
+
+      teamSetting[teamA].forEach((e: TeamSettingElement) => {
+        const { name, type, value } = e;
+        SetInputSettings(`${name}_A`, GenerateInputSettings(type, value));
+      });
+    }
   }, [teamA, connectStatus]);
 
   useEffect(() => {
-    if (connectStatus === StatusCode.AUTHENTICATED)
+    if (connectStatus === StatusCode.AUTHENTICATED) {
       SetInputSettings(TEAM_B_NAME, { text: teamB });
+
+      teamSetting[teamB].forEach((e: TeamSettingElement) => {
+        const { name, type, value } = e;
+        SetInputSettings(`${name}_B`, GenerateInputSettings(type, value));
+      });
+    }
   }, [teamB, connectStatus]);
 
   useEffect(() => {
