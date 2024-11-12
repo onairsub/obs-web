@@ -9,6 +9,7 @@ import {
   TimeFunction,
 } from "./_utils/AnimateItem";
 import { useLocalStorage } from "usehooks-ts";
+import { OBSElementProperties } from "../obs/team-setting/[id]/_constants/constants";
 
 type Scene = {
   sceneName: string;
@@ -33,12 +34,6 @@ type TeamSettingElement = {
   value: string;
 };
 
-const Properties = {
-  [TeamSettingElementType.TEXT]: "text",
-  [TeamSettingElementType.IMAGE]: "file",
-  [TeamSettingElementType.VIDEO]: "local_file",
-};
-
 export default function ProviderTest() {
   const { webSocketManager, connectStatus, recentResponse } = useWebSocket();
 
@@ -49,7 +44,7 @@ export default function ProviderTest() {
       {
         name: "logo",
         type: TeamSettingElementType.IMAGE,
-        value: "C:/Users/JihunSeo/Downloads/images.png",
+        value: "~/Downloads/images.png",
       },
     ],
   });
@@ -134,7 +129,7 @@ export default function ProviderTest() {
     value: string
   ) => {
     return {
-      [Properties[type]]: value,
+      [OBSElementProperties[type]]: value,
     };
   };
 
