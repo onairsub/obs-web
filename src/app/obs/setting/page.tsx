@@ -4,7 +4,10 @@ import styled from "@emotion/styled";
 import { Button, IconButton, TextField, Typography } from "@mui/material";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import React, { ChangeEventHandler, useEffect, useRef } from "react";
 import { useLocalStorage } from "usehooks-ts";
+import { projectHmrEvents } from "next/dist/build/swc/generated-native";
+import { TeamSettingElement } from "../team-setting/[id]/_constants/constants";
 
 function updateListAtIndex(list: any[], index: number, newValue: any) {
   if (index < 0 || index >= list.length) {
@@ -28,11 +31,121 @@ const SettingPage = () => {
     "OBS_SET_LIST",
     [10, 7, 5]
   );
+  const [teamSetting, setTeamSetting, clearTeamSetting] = useLocalStorage<{
+    [key: string]: TeamSettingElement[];
+  }>("OBS_TEAM_SETTINGS", {});
+
+  const [localPath, setLocalPath] = useLocalStorage(
+    "OBS_LOCAL_PATH",
+    "C:/Users"
+  );
+
+  const SaveSettings = () => {
+    const dataStr = JSON.stringify(GetSettings(), null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "settings.json";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const LoadSettings = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files === null) return;
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        if (!e.target?.result) return;
+        const importedSettings = JSON.parse(e.target.result as string);
+        SetSettings(importedSettings);
+      } catch (err) {
+        console.error("Error parsing JSON file:", err);
+        alert("Invalid JSON file");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const GetSettings = () => {
+    return {
+      titleList,
+      teamList,
+      setList,
+      teamSetting,
+    };
+  };
+
+  const SetSettings = (settingData: {
+    titleList: string[];
+    teamList: string[];
+    setList: number[];
+    teamSetting: {
+      [key: string]: TeamSettingElement[];
+    };
+  }) => {
+    const {
+      titleList: _titleList,
+      teamList: _teamList,
+      setList: _setList,
+      teamSetting: _teamSetting,
+    } = settingData;
+    setTitleList(_titleList);
+    setTeamList(_teamList);
+    setSetList(_setList);
+    setTeamSetting(_teamSetting);
+  };
+
+  useEffect(() => {
+    teamList.forEach((e, idx) => {
+      if (!Object.keys(teamSetting).includes(idx.toString()))
+        setTeamSetting((prev) => ({ ...prev, [idx.toString()]: [] }));
+    });
+  }, [teamList, teamSetting, setTeamSetting]);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
   return (
     <>
       <IconButton onClick={() => router.back()}>
         <Image src="/arrow_back.svg" alt="back" width={36} height={36} />
       </IconButton>
+      <HeaderButtonWrapper>
+        <TextField
+          label="local asset path"
+          value={localPath}
+          onChange={(e) => setLocalPath(e.target.value)}
+        />
+        <input
+          type="file"
+          accept=".json"
+          onChange={LoadSettings}
+          ref={inputRef}
+          style={{
+            display: "none",
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: "100%",
+            height: "100%",
+            cursor: "pointer",
+          }}
+        />
+        <Button onClick={SaveSettings}>SAVE SETTINGS</Button>
+        <Button
+          onClick={() => {
+            inputRef.current?.click();
+          }}
+        >
+          Load SETTINGS
+        </Button>
+      </HeaderButtonWrapper>
       <StyledWrapper>
         <TitleWrapper>
           <h1>경기 제목</h1>
@@ -82,6 +195,13 @@ const SettingPage = () => {
                     updateListAtIndex(prev, idx, event.target.value)
                   )
                 }
+              />
+              <Image
+                onClick={() => router.push(`/obs/team-setting/${idx}`)}
+                src="/edit.svg"
+                alt="team setting"
+                width={36}
+                height={36}
               />
               <Image
                 onClick={() =>
@@ -153,6 +273,11 @@ const SettingPage = () => {
 };
 
 export default SettingPage;
+
+const HeaderButtonWrapper = styled.div`
+  display: flex;
+  justify-content: space-between;
+`;
 
 const StyledWrapper = styled.div`
   padding: 64px;

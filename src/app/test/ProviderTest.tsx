@@ -8,6 +8,8 @@ import {
   AnimateWithKeyframe,
   TimeFunction,
 } from "./_utils/AnimateItem";
+import { useLocalStorage } from "usehooks-ts";
+import { OBSElementProperties } from "../obs/team-setting/[id]/_constants/constants";
 
 type Scene = {
   sceneName: string;
@@ -20,8 +22,32 @@ type Item = {
   inputUuid: string;
 };
 
+enum TeamSettingElementType {
+  TEXT,
+  IMAGE,
+  VIDEO,
+}
+
+type TeamSettingElement = {
+  name: string;
+  type: TeamSettingElementType;
+  value: string;
+};
+
 export default function ProviderTest() {
   const { webSocketManager, connectStatus, recentResponse } = useWebSocket();
+
+  const [teamSetting, setTeamSetting, clearTeamSetting] = useLocalStorage<{
+    [key: string]: TeamSettingElement[];
+  }>("OBS_TEAM_SETTINGS", {
+    서울대: [
+      {
+        name: "logo",
+        type: TeamSettingElementType.IMAGE,
+        value: "~/Downloads/images.png",
+      },
+    ],
+  });
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [items, setItems] = useState<Item[]>([]);
 
@@ -96,6 +122,15 @@ export default function ProviderTest() {
         },
       },
     });
+  };
+
+  const GenerateInputSettings = (
+    type: TeamSettingElementType,
+    value: string
+  ) => {
+    return {
+      [OBSElementProperties[type]]: value,
+    };
   };
 
   useEffect(() => {
@@ -232,6 +267,17 @@ export default function ProviderTest() {
         }}
       >
         restart
+      </Button>
+      <Button
+        variant="outlined"
+        onClick={() => {
+          teamSetting["서울대"].forEach((e: TeamSettingElement) => {
+            const { name, type, value } = e;
+            SetInputSettings(`${name}_A`, GenerateInputSettings(type, value));
+          });
+        }}
+      >
+        change
       </Button>
     </div>
   );

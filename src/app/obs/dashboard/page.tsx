@@ -19,6 +19,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLocalStorage } from "usehooks-ts";
 
+import { combinePath } from "./_utils/pathParser";
+import {
+  OBSElementProperties,
+  TeamSettingElement,
+  TeamSettingElementType,
+} from "../team-setting/[id]/_constants/constants";
+
 const TITLE_NAME = "title";
 const SET_NAME = "set";
 const TEAM_A_NAME = "team_A";
@@ -70,6 +77,11 @@ const Scores = () => {
   const [title, setTitle] = useLocalStorage("OBS_TITLE", "서울대배 8강 경기");
   const [teamA, setTeamA] = useLocalStorage("OBS_TEAM_A", "서울대");
   const [teamB, setTeamB] = useLocalStorage("OBS_TEAM_B", "연세대");
+  const [localPath] = useLocalStorage("OBS_LOCAL_PATH", "C:/Users");
+
+  const [teamSetting, setTeamSetting, clearTeamSetting] = useLocalStorage<{
+    [key: string]: TeamSettingElement[];
+  }>("OBS_TEAM_SETTINGS", {});
 
   const [scores, setScores] = useLocalStorage("OBS_SCORE", [0, 0]);
   const [sets, setSets] = useLocalStorage("OBS_SETS", [0, 0]);
@@ -174,6 +186,15 @@ const Scores = () => {
     });
   };
 
+  const GenerateInputSettings = (
+    type: TeamSettingElementType,
+    value: string
+  ) => {
+    return {
+      [OBSElementProperties[type]]: value,
+    };
+  };
+
   const ScoreAdd = (id: string, inc: number) => {
     if (id === SCORE_A_ID) {
       setScores((prev) => [filterScore(prev[0] + inc), prev[1]]);
@@ -265,14 +286,48 @@ const Scores = () => {
   }, [connectStatus]);
 
   useEffect(() => {
-    if (connectStatus === StatusCode.AUTHENTICATED)
+    if (connectStatus === StatusCode.AUTHENTICATED) {
       SetInputSettings(TEAM_A_NAME, { text: teamA });
-  }, [teamA, connectStatus]);
+
+      teamSetting[teamList.indexOf(teamA).toString()]?.forEach(
+        (e: TeamSettingElement) => {
+          console.log("AAAAAAAAAAAAAAAAAAAAAAAAAAA");
+          const { name, type, value } = e;
+          SetInputSettings(
+            `${name}_A`,
+            GenerateInputSettings(
+              type,
+              type === TeamSettingElementType.TEXT
+                ? value
+                : combinePath(localPath, value)
+            )
+          );
+        }
+      );
+    }
+  }, [teamA, connectStatus, localPath]);
 
   useEffect(() => {
-    if (connectStatus === StatusCode.AUTHENTICATED)
+    if (connectStatus === StatusCode.AUTHENTICATED) {
       SetInputSettings(TEAM_B_NAME, { text: teamB });
-  }, [teamB, connectStatus]);
+
+      teamSetting[teamList.indexOf(teamB).toString()]?.forEach(
+        (e: TeamSettingElement) => {
+          console.log("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+          const { name, type, value } = e;
+          SetInputSettings(
+            `${name}_B`,
+            GenerateInputSettings(
+              type,
+              type === TeamSettingElementType.TEXT
+                ? value
+                : combinePath(localPath, value)
+            )
+          );
+        }
+      );
+    }
+  }, [teamB, connectStatus, localPath]);
 
   useEffect(() => {
     if (connectStatus === StatusCode.AUTHENTICATED) {
