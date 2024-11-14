@@ -498,6 +498,13 @@ const Scores = () => {
             label="경기 제목"
             placeholder="경기 제목을 입력하세요"
             onChange={(e) => setTitle(e.target.value)}
+            sx={{
+              maxWidth: "50vw",
+              textOverflow: "ellipsis",
+              overflow: "hidden",
+              unicodeBidi: "embed",
+              direction: "rtl",
+            }}
           >
             {titleList.map((e, idx) => (
               <MenuItem key={idx} value={e}>
