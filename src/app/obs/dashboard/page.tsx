@@ -224,6 +224,10 @@ const Scores = () => {
   };
 
   const FindSceneItem = (inputName: string) => {
+    const result = {
+      sceneName: "",
+      sceneItemId: 0,
+    };
     if (cache.has(inputName)) return cache.get(inputName);
     else {
       Object.keys(sceneItems).forEach((key) => {
@@ -237,12 +241,14 @@ const Scores = () => {
               });
               return newMap;
             });
-            return e.sceneItemId;
+            result.sceneName = key;
+            result.sceneItemId = e.sceneItemId;
           }
         });
       });
     }
-    return null;
+    console.log("found : ", result);
+    return result.sceneItemId === 0 ? null : result;
   };
 
   const SwitchTeams = () => {
@@ -498,6 +504,13 @@ const Scores = () => {
             label="경기 제목"
             placeholder="경기 제목을 입력하세요"
             onChange={(e) => setTitle(e.target.value)}
+            sx={{
+              maxWidth: "50vw",
+              textOverflow: "ellipsis",
+              overflow: "hidden",
+              unicodeBidi: "embed",
+              direction: "rtl",
+            }}
           >
             {titleList.map((e, idx) => (
               <MenuItem key={idx} value={e}>
