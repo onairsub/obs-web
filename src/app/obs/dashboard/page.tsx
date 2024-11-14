@@ -37,6 +37,7 @@ const SCORE_B_NAME = "score_B";
 const SET_B_NAME = "set_B";
 const SCORE_B_ID = "score_B";
 
+const TIMEOUT_NAME = "time_out";
 const MATCH_POINT_NAME = "match_point";
 const SET_POINT_NAME = "set_point";
 
@@ -93,6 +94,7 @@ const Scores = () => {
     Map<string, { sceneItemId: number; sceneName: string }>
   >(new Map());
   const [sceneItems, setSceneItems] = useState<{ [key: string]: any }>({});
+  const [timeOut, setTimeOut] = useState(false);
 
   const filterScore = (score: number) => {
     if (score < 0) return 0;
@@ -394,6 +396,15 @@ const Scores = () => {
 
   useEffect(() => {
     if (connectStatus === StatusCode.AUTHENTICATED) {
+      const result = FindSceneItem(TIMEOUT_NAME);
+      if (result === null || result === undefined) return;
+      const { sceneName, sceneItemId } = result;
+      SetSceneItemEnabled(sceneName, sceneItemId, timeOut);
+    }
+  }, [timeOut, connectStatus]);
+
+  useEffect(() => {
+    if (connectStatus === StatusCode.AUTHENTICATED) {
       for (let i = 0; i < 3; i++) {
         const result = FindSceneItem(`${SET_A_NAME}_${i + 1}`);
         console.log("found A: ", result);
@@ -548,10 +559,26 @@ const Scores = () => {
         <div>set score</div>
         <div>{`${sets[0]} : ${sets[1]}`}</div>
         <Box sx={{ marginBottom: "16px" }} />
-        <Button sx={{ width: "200px" }} variant="contained" onClick={FinishSet}>
+        <Button
+          sx={{ width: "200px", marginBottom: "8px" }}
+          variant="contained"
+          onClick={FinishSet}
+        >
           finish set
         </Button>
-        <Button sx={{ width: "200px" }} variant="outlined" onClick={ResetScore}>
+        <Button
+          sx={{ width: "200px", marginBottom: "8px" }}
+          color="error"
+          variant={timeOut ? "contained" : "outlined"}
+          onClick={() => setTimeOut((prev) => !prev)}
+        >
+          timeout
+        </Button>
+        <Button
+          sx={{ width: "200px", marginBottom: "8px" }}
+          variant="outlined"
+          onClick={ResetScore}
+        >
           reset score
         </Button>
         <Button sx={{ width: "200px" }} variant="outlined" onClick={ResetAll}>
