@@ -224,6 +224,10 @@ const Scores = () => {
   };
 
   const FindSceneItem = (inputName: string) => {
+    const result = {
+      sceneName: "",
+      sceneItemId: 0,
+    };
     if (cache.has(inputName)) return cache.get(inputName);
     else {
       Object.keys(sceneItems).forEach((key) => {
@@ -237,12 +241,14 @@ const Scores = () => {
               });
               return newMap;
             });
-            return e.sceneItemId;
+            result.sceneName = key;
+            result.sceneItemId = e.sceneItemId;
           }
         });
       });
     }
-    return null;
+    console.log("found : ", result);
+    return result.sceneItemId === 0 ? null : result;
   };
 
   const SwitchTeams = () => {
