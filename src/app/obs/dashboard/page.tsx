@@ -80,7 +80,10 @@ const Scores = () => {
   const [teamB, setTeamB] = useLocalStorage("OBS_TEAM_B", "연세대");
   const [localPath] = useLocalStorage("OBS_LOCAL_PATH", "C:/Users");
 
-  const [teamSetting, setTeamSetting, clearTeamSetting] = useLocalStorage<{
+  const [matchSetting] = useLocalStorage<{
+    [key: string]: TeamSettingElement[];
+  }>("OBS_MATCH_SETTINGS", {});
+  const [teamSetting] = useLocalStorage<{
     [key: string]: TeamSettingElement[];
   }>("OBS_TEAM_SETTINGS", {});
 
@@ -299,7 +302,6 @@ const Scores = () => {
 
       teamSetting[teamList.indexOf(teamA).toString()]?.forEach(
         (e: TeamSettingElement) => {
-          console.log("AAAAAAAAAAAAAAAAAAAAAAAAAAA");
           const { name, type, value } = e;
           SetInputSettings(
             `${name}_A`,
@@ -313,7 +315,7 @@ const Scores = () => {
         }
       );
     }
-  }, [teamA, connectStatus, localPath]);
+  }, [teamA, connectStatus, localPath, teamSetting, teamList]);
 
   useEffect(() => {
     if (connectStatus === StatusCode.AUTHENTICATED) {
@@ -321,7 +323,6 @@ const Scores = () => {
 
       teamSetting[teamList.indexOf(teamB).toString()]?.forEach(
         (e: TeamSettingElement) => {
-          console.log("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
           const { name, type, value } = e;
           SetInputSettings(
             `${name}_B`,
@@ -335,14 +336,29 @@ const Scores = () => {
         }
       );
     }
-  }, [teamB, connectStatus, localPath]);
+  }, [teamB, connectStatus, localPath, teamSetting, teamList]);
 
   useEffect(() => {
     if (connectStatus === StatusCode.AUTHENTICATED) {
       SetInputSettings(TITLE_NAME, { text: title });
       setTmpTitle(title);
+
+      matchSetting[titleList.indexOf(title).toString()]?.forEach(
+        (e: TeamSettingElement) => {
+          const { name, type, value } = e;
+          SetInputSettings(
+            name,
+            GenerateInputSettings(
+              type,
+              type === TeamSettingElementType.TEXT
+                ? value
+                : combinePath(localPath, value)
+            )
+          );
+        }
+      );
     }
-  }, [title, connectStatus]);
+  }, [title, connectStatus, localPath, matchSetting, titleList]);
 
   useEffect(() => {
     if (connectStatus === StatusCode.AUTHENTICATED) {
