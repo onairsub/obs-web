@@ -34,6 +34,9 @@ const SettingPage = () => {
   const [teamSetting, setTeamSetting, clearTeamSetting] = useLocalStorage<{
     [key: string]: TeamSettingElement[];
   }>("OBS_TEAM_SETTINGS", {});
+  const [matchSetting, setMatchSetting, clearMatchSetting] = useLocalStorage<{
+    [key: string]: TeamSettingElement[];
+  }>("OBS_MATCH_SETTINGS", {});
 
   const [localPath, setLocalPath] = useLocalStorage(
     "OBS_LOCAL_PATH",
@@ -76,6 +79,7 @@ const SettingPage = () => {
   const GetSettings = () => {
     return {
       titleList,
+      matchSetting,
       teamList,
       setList,
       teamSetting,
@@ -84,6 +88,9 @@ const SettingPage = () => {
 
   const SetSettings = (settingData: {
     titleList: string[];
+    matchSetting: {
+      [key: string]: TeamSettingElement[];
+    };
     teamList: string[];
     setList: number[];
     teamSetting: {
@@ -92,11 +99,13 @@ const SettingPage = () => {
   }) => {
     const {
       titleList: _titleList,
+      matchSetting: _matchSetting,
       teamList: _teamList,
       setList: _setList,
       teamSetting: _teamSetting,
     } = settingData;
     setTitleList(_titleList);
+    setMatchSetting(_matchSetting);
     setTeamList(_teamList);
     setSetList(_setList);
     setTeamSetting(_teamSetting);
@@ -108,6 +117,13 @@ const SettingPage = () => {
         setTeamSetting((prev) => ({ ...prev, [idx.toString()]: [] }));
     });
   }, [teamList, teamSetting, setTeamSetting]);
+
+  useEffect(() => {
+    titleList.forEach((e, idx) => {
+      if (!Object.keys(matchSetting).includes(idx.toString()))
+        setMatchSetting((prev) => ({ ...prev, [idx.toString()]: [] }));
+    });
+  }, [titleList, matchSetting, setMatchSetting]);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -161,6 +177,13 @@ const SettingPage = () => {
                     updateListAtIndex(prev, idx, event.target.value)
                   )
                 }
+              />
+              <Image
+                onClick={() => router.push(`/obs/match-setting/${idx}`)}
+                src="/edit.svg"
+                alt="match setting"
+                width={36}
+                height={36}
               />
               <Image
                 onClick={() =>
