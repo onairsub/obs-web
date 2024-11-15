@@ -52,6 +52,12 @@ type SceneItem = {
   sceneItemId: number;
 };
 
+enum RoundType {
+  NORMAL,
+  SET_POINT,
+  MATCH_POINT,
+}
+
 const Scores = () => {
   const router = useRouter();
 
@@ -99,9 +105,21 @@ const Scores = () => {
   const [sceneItems, setSceneItems] = useState<{ [key: string]: any }>({});
   const [timeOut, setTimeOut] = useState(false);
 
+  const [roundType, setRoundType] = useState<RoundType>(RoundType.NORMAL);
+
   const filterScore = (score: number) => {
     if (score < 0) return 0;
     return score;
+  };
+
+  const GetCurrentProgramScene = (requestId: string = "123456789") => {
+    webSocketManager?.sendMessage({
+      op: 6,
+      d: {
+        requestId,
+        requestType: "GetCurrentProgramScene",
+      },
+    });
   };
 
   const SetCurrentProgramScene = (sceneName: string) => {
@@ -200,6 +218,10 @@ const Scores = () => {
     };
   };
 
+  const ApplyScene = () => {
+    GetCurrentProgramScene("APPLYSCENE");
+  };
+
   const ScoreAdd = (id: string, inc: number) => {
     if (id === SCORE_A_ID) {
       setScores((prev) => [filterScore(prev[0] + inc), prev[1]]);
@@ -260,12 +282,6 @@ const Scores = () => {
     setTeamA(teamB);
     setTeamB(teamA);
   };
-
-  enum RoundType {
-    NORMAL,
-    SET_POINT,
-    MATCH_POINT,
-  }
 
   const CheckRoundType = () => {
     if (
@@ -362,58 +378,62 @@ const Scores = () => {
 
   useEffect(() => {
     if (connectStatus === StatusCode.AUTHENTICATED) {
-      // if (ready[0] && ready[1]) {
       SetInputSettings(SCORE_A_NAME, { text: scores[0].toString() });
       SetInputSettings(SCORE_B_NAME, { text: scores[1].toString() });
-      // }
 
-      const matchPoint = FindSceneItem(MATCH_POINT_NAME);
-      const setPoint = FindSceneItem(SET_POINT_NAME);
-
-      switch (CheckRoundType()) {
-        case RoundType.NORMAL:
-          SetSceneItemEnabled(
-            matchPoint?.sceneName || "unknown",
-            matchPoint?.sceneItemId || 0,
-            false
-          );
-          SetSceneItemEnabled(
-            setPoint?.sceneName || "unknown",
-            setPoint?.sceneItemId || 0,
-            false
-          );
-          break;
-        case RoundType.MATCH_POINT:
-          SetSceneItemEnabled(
-            matchPoint?.sceneName || "unknown",
-            matchPoint?.sceneItemId || 0,
-            true
-          );
-          SetSceneItemEnabled(
-            setPoint?.sceneName || "unknown",
-            setPoint?.sceneItemId || 0,
-            false
-          );
-          break;
-        case RoundType.SET_POINT:
-          SetSceneItemEnabled(
-            matchPoint?.sceneName || "unknown",
-            matchPoint?.sceneItemId || 0,
-            false
-          );
-          SetSceneItemEnabled(
-            setPoint?.sceneName || "unknown",
-            setPoint?.sceneItemId || 0,
-            true
-          );
-          break;
-      }
+      setRoundType(CheckRoundType());
     }
   }, [scores, connectStatus]);
 
   useEffect(() => {
-    if (connectStatus === StatusCode.AUTHENTICATED)
+    const matchPoint = FindSceneItem(MATCH_POINT_NAME);
+    const setPoint = FindSceneItem(SET_POINT_NAME);
+
+    switch (roundType) {
+      case RoundType.NORMAL:
+        SetSceneItemEnabled(
+          matchPoint?.sceneName || "unknown",
+          matchPoint?.sceneItemId || 0,
+          false
+        );
+        SetSceneItemEnabled(
+          setPoint?.sceneName || "unknown",
+          setPoint?.sceneItemId || 0,
+          false
+        );
+        break;
+      case RoundType.MATCH_POINT:
+        SetSceneItemEnabled(
+          matchPoint?.sceneName || "unknown",
+          matchPoint?.sceneItemId || 0,
+          true
+        );
+        SetSceneItemEnabled(
+          setPoint?.sceneName || "unknown",
+          setPoint?.sceneItemId || 0,
+          false
+        );
+        break;
+      case RoundType.SET_POINT:
+        SetSceneItemEnabled(
+          matchPoint?.sceneName || "unknown",
+          matchPoint?.sceneItemId || 0,
+          false
+        );
+        SetSceneItemEnabled(
+          setPoint?.sceneName || "unknown",
+          setPoint?.sceneItemId || 0,
+          true
+        );
+        break;
+    }
+    ApplyScene();
+  }, [roundType, connectStatus]);
+
+  useEffect(() => {
+    if (connectStatus === StatusCode.AUTHENTICATED) {
       SetInputSettings(SET_NAME, { text: `${currentSet} SET` });
+    }
   }, [currentSet, connectStatus]);
 
   useEffect(() => {
@@ -422,6 +442,7 @@ const Scores = () => {
       if (result === null || result === undefined) return;
       const { sceneName, sceneItemId } = result;
       SetSceneItemEnabled(sceneName, sceneItemId, timeOut);
+      ApplyScene();
     }
   }, [timeOut, connectStatus]);
 
@@ -441,6 +462,7 @@ const Scores = () => {
         const { sceneName, sceneItemId } = result;
         SetSceneItemEnabled(sceneName, sceneItemId, sets[1] > i);
       }
+      ApplyScene();
     }
   }, [sets, cache, connectStatus]);
 
@@ -476,6 +498,9 @@ const Scores = () => {
         ...prev,
         [res.requestId]: res.responseData.sceneItems,
       }));
+    }
+    if (res.requestId === "APPLYSCENE") {
+      SetCurrentProgramScene(res.responseData.sceneName);
     }
   }, [responseBuffer, popBuffer]);
 
