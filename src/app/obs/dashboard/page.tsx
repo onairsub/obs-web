@@ -516,14 +516,16 @@ const Scores = () => {
         >
           Scenes
         </Typography>
-        {Object.keys(sceneItems).map((sceneName) => (
-          <Button
-            key={sceneName}
-            onClick={() => SetCurrentProgramScene(sceneName)}
-          >
-            {sceneName}
-          </Button>
-        ))}
+        {Object.keys(sceneItems)
+          .toReversed()
+          .map((sceneName) => (
+            <Button
+              key={sceneName}
+              onClick={() => SetCurrentProgramScene(sceneName)}
+            >
+              {sceneName}
+            </Button>
+          ))}
         <Divider variant="middle" />
         <Button
           onClick={() => router.push("/obs/setting")}
