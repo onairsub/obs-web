@@ -13,8 +13,6 @@ import {
   Select,
   TextField,
   Typography,
-  Checkbox, // 16.1
-  FormControlLabel, // 16.2
 } from "@mui/material";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -135,10 +133,6 @@ const Scores = () => {
   );
   const [extraTime, setExtraTime] = useLocalStorage<boolean>(
     "OBS_TIMER_EXTRA_TIME",
-    false
-  );
-  const [animateET, setAnimateET] = useLocalStorage<boolean>(
-    "OBS_TIMER_ANIMATE_ET",
     false
   );
   const [roundType, setRoundType] = useState<RoundType>(RoundType.NORMAL);
@@ -576,28 +570,15 @@ const Scores = () => {
       ApplyScene();
     }
   }, [timeOut, connectStatus]);
-  // Extra Time overlay toggle + optional restart trick
+  // Extra Time overlay simple toggle
   useEffect(() => {
     if (connectStatus !== StatusCode.AUTHENTICATED) return;
     const result = FindSceneItem(EXTRA_TIME_NAME);
     if (!result) return;
     const { sceneName, sceneItemId } = result;
-    if (extraTime) {
-      if (animateET) {
-        SetSceneItemEnabled(sceneName, sceneItemId, false);
-        setTimeout(() => {
-          SetSceneItemEnabled(sceneName, sceneItemId, true);
-          ApplyScene();
-        }, 80);
-      } else {
-        SetSceneItemEnabled(sceneName, sceneItemId, true);
-        ApplyScene();
-      }
-    } else {
-      SetSceneItemEnabled(sceneName, sceneItemId, false);
-      ApplyScene();
-    }
-  }, [extraTime, animateET, connectStatus]);
+    SetSceneItemEnabled(sceneName, sceneItemId, extraTime);
+    ApplyScene();
+  }, [extraTime, connectStatus]);
 
   // Reflect immediate text when parameters changed and not running
   useEffect(() => {
@@ -857,15 +838,6 @@ const Scores = () => {
             >
               extra time
             </Button>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={animateET}
-                  onChange={(_, v) => setAnimateET(v)}
-                />
-              }
-              label="animate extra time"
-            />
           </Box>
         </Box>
       </StyledWrapper>
