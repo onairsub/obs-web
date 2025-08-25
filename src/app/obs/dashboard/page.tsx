@@ -13,6 +13,8 @@ import {
   Select,
   TextField,
   Typography,
+  Checkbox, // 16.1
+  FormControlLabel, // 16.2
 } from "@mui/material";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -40,6 +42,10 @@ const SCORE_B_ID = "score_B";
 const TIMEOUT_NAME = "time_out";
 const MATCH_POINT_NAME = "match_point";
 const SET_POINT_NAME = "set_point";
+// Timer/Extra Time
+const TIMER_NAME = "timer";
+const EXTRA_TIME_NAME = "extra_time";
+const TIMER_END_NAME = "timer_end";
 
 type Scene = {
   sceneName: string;
@@ -105,6 +111,36 @@ const Scores = () => {
   const [sceneItems, setSceneItems] = useState<{ [key: string]: any }>({});
   const [timeOut, setTimeOut] = useState(false);
 
+  // Timer states
+  const [timerMode, setTimerMode] = useLocalStorage<"up" | "down">(
+    "OBS_TIMER_MODE",
+    "up"
+  ); // T: up|down
+  const [countdownSec, setCountdownSec] = useLocalStorage<number>(
+    "OBS_TIMER_COUNTDOWN_SEC",
+    600
+  );
+  const [isRunning, setIsRunning] = useLocalStorage<boolean>(
+    "OBS_TIMER_RUNNING",
+    false
+  );
+  const [epoch, setEpoch] = useLocalStorage<number>("OBS_TIMER_EPOCH", 0);
+  const [elapsedBeforeStart, setElapsedBeforeStart] = useLocalStorage<number>(
+    "OBS_TIMER_ELAPSED_BEFORE_START",
+    0
+  );
+  const [lastTimerText, setLastTimerText] = useLocalStorage<string>(
+    "OBS_TIMER_LAST_TEXT",
+    "00:00"
+  );
+  const [extraTime, setExtraTime] = useLocalStorage<boolean>(
+    "OBS_TIMER_EXTRA_TIME",
+    false
+  );
+  const [animateET, setAnimateET] = useLocalStorage<boolean>(
+    "OBS_TIMER_ANIMATE_ET",
+    false
+  );
   const [roundType, setRoundType] = useState<RoundType>(RoundType.NORMAL);
 
   const filterScore = (score: number) => {
@@ -218,6 +254,91 @@ const Scores = () => {
     };
   };
 
+  // ===== Timer Helpers =====
+  const formatTime = (secTotal: number) => {
+    const s = Math.max(0, Math.floor(secTotal));
+    const mm = Math.floor(s / 60)
+      .toString()
+      .padStart(2, "0");
+    const ss = (s % 60).toString().padStart(2, "0");
+    return `${mm}:${ss}`;
+  };
+
+  const updateTimerText = () => {
+    let sec = 0;
+    const now = Date.now();
+    const runningElapsed =
+      isRunning && epoch > 0 ? Math.floor((now - epoch) / 1000) : 0;
+
+    if (timerMode === "up") {
+      sec = elapsedBeforeStart + runningElapsed;
+    } else {
+      sec = Math.max(countdownSec - (elapsedBeforeStart + runningElapsed), 0);
+    }
+
+    // handle countdown reach 0
+    if (timerMode === "down" && sec === 0 && isRunning) {
+      // auto pause
+      setIsRunning(false);
+      setEpoch(0);
+      setElapsedBeforeStart(0);
+      // optional end overlay
+      const endItem = FindSceneItem(TIMER_END_NAME);
+      if (endItem) {
+        SetSceneItemEnabled(endItem.sceneName, endItem.sceneItemId, true);
+        ApplyScene();
+        setTimeout(() => {
+          SetSceneItemEnabled(endItem.sceneName, endItem.sceneItemId, false);
+          ApplyScene();
+        }, 1500);
+      }
+    }
+
+    const text = formatTime(sec);
+    if (text !== lastTimerText) {
+      if (connectStatus === StatusCode.AUTHENTICATED) {
+        SetInputSettings(TIMER_NAME, { text });
+      }
+      setLastTimerText(text);
+    }
+  };
+
+  const startTimer = () => {
+    if (isRunning) return;
+    setEpoch(Date.now());
+    setIsRunning(true);
+  };
+
+  const pauseTimer = () => {
+    if (!isRunning) return;
+    const now = Date.now();
+    const runningElapsed = epoch > 0 ? Math.floor((now - epoch) / 1000) : 0;
+    setElapsedBeforeStart((prev) => Math.max(prev + runningElapsed, 0));
+    setEpoch(0);
+    setIsRunning(false);
+    updateTimerText();
+  };
+
+  const resetTimer = () => {
+    setIsRunning(false);
+    setEpoch(0);
+    setElapsedBeforeStart(0);
+    const initialText = timerMode === "up" ? "00:00" : formatTime(countdownSec);
+    if (connectStatus === StatusCode.AUTHENTICATED) {
+      SetInputSettings(TIMER_NAME, { text: initialText });
+    }
+    setLastTimerText(initialText);
+  };
+
+  const nudgeSeconds = (delta: number) => {
+    if (timerMode === "up") {
+      setElapsedBeforeStart((prev) => Math.max(prev + delta, 0));
+    } else {
+      setCountdownSec((prev) => Math.max(prev + delta, 0));
+    }
+    // reflect immediately when not running
+    if (!isRunning) updateTimerText();
+  };
   const ApplyScene = () => {
     GetCurrentProgramScene("APPLYSCENE");
   };
@@ -308,8 +429,10 @@ const Scores = () => {
   useEffect(() => {
     // GetInputSettings(SCORE_A_NAME, SCORE_A_ID);
     // GetInputSettings(SCORE_B_NAME, SCORE_B_ID);
-    if (connectStatus === StatusCode.AUTHENTICATED)
+    if (connectStatus === StatusCode.AUTHENTICATED) {
       GetSceneList("GETSCENEDATA");
+      updateTimerText();
+    }
   }, [connectStatus]);
 
   useEffect(() => {
@@ -384,6 +507,14 @@ const Scores = () => {
       setRoundType(CheckRoundType());
     }
   }, [scores, connectStatus]);
+  // Timer ticking
+  useEffect(() => {
+    if (!isRunning) return;
+    const id = setInterval(() => {
+      updateTimerText();
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isRunning, timerMode, countdownSec, epoch, elapsedBeforeStart]);
 
   useEffect(() => {
     const matchPoint = FindSceneItem(MATCH_POINT_NAME);
@@ -445,6 +576,33 @@ const Scores = () => {
       ApplyScene();
     }
   }, [timeOut, connectStatus]);
+  // Extra Time overlay toggle + optional restart trick
+  useEffect(() => {
+    if (connectStatus !== StatusCode.AUTHENTICATED) return;
+    const result = FindSceneItem(EXTRA_TIME_NAME);
+    if (!result) return;
+    const { sceneName, sceneItemId } = result;
+    if (extraTime) {
+      if (animateET) {
+        SetSceneItemEnabled(sceneName, sceneItemId, false);
+        setTimeout(() => {
+          SetSceneItemEnabled(sceneName, sceneItemId, true);
+          ApplyScene();
+        }, 80);
+      } else {
+        SetSceneItemEnabled(sceneName, sceneItemId, true);
+        ApplyScene();
+      }
+    } else {
+      SetSceneItemEnabled(sceneName, sceneItemId, false);
+      ApplyScene();
+    }
+  }, [extraTime, animateET, connectStatus]);
+
+  // Reflect immediate text when parameters changed and not running
+  useEffect(() => {
+    if (!isRunning) updateTimerText();
+  }, [timerMode, countdownSec, elapsedBeforeStart]);
 
   useEffect(() => {
     if (connectStatus === StatusCode.AUTHENTICATED) {
@@ -640,6 +798,76 @@ const Scores = () => {
         <Button sx={{ width: "200px" }} variant="outlined" onClick={ResetAll}>
           reset all
         </Button>
+        <Divider variant="middle" sx={{ width: "100%", my: 2 }} />
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            alignItems: "center",
+          }}
+        >
+          <Typography sx={{ fontWeight: "bold" }}>Timer</Typography>
+          <Typography variant="h4">{lastTimerText}</Typography>
+          <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+            <FormControl sx={{ minWidth: 160 }}>
+              <InputLabel>Mode</InputLabel>
+              <Select
+                value={timerMode}
+                label="Mode"
+                onChange={(e) => setTimerMode(e.target.value as "up" | "down")}
+              >
+                <MenuItem value="up">Count Up</MenuItem>
+                <MenuItem value="down">Count Down</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              label="CountDown(sec)"
+              type="number"
+              disabled={timerMode !== "down"}
+              value={countdownSec}
+              onChange={(e) =>
+                setCountdownSec(Math.max(parseInt(e.target.value || "0"), 0))
+              }
+            />
+          </Box>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <Button variant="contained" onClick={startTimer}>
+              Start
+            </Button>
+            <Button variant="outlined" onClick={pauseTimer}>
+              Pause
+            </Button>
+            <Button variant="outlined" onClick={resetTimer}>
+              Reset
+            </Button>
+            <Button variant="outlined" onClick={() => nudgeSeconds(10)}>
+              +10s
+            </Button>
+            <Button variant="outlined" onClick={() => nudgeSeconds(-10)}>
+              -10s
+            </Button>
+          </Box>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+            <Button
+              sx={{ width: 200 }}
+              color="secondary"
+              variant={extraTime ? "contained" : "outlined"}
+              onClick={() => setExtraTime((prev) => !prev)}
+            >
+              extra time
+            </Button>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={animateET}
+                  onChange={(_, v) => setAnimateET(v)}
+                />
+              }
+              label="animate extra time"
+            />
+          </Box>
+        </Box>
       </StyledWrapper>
     </PageWrapper>
   );

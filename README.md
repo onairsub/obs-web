@@ -63,32 +63,20 @@ bun dev
 - score_B
 - set
 권장 입력 종류: Text(GDI+) (SetInputSettings로 { text: "..." } 적용)
-
 표시/숨김 토글 대상 씬 아이템(Scene Item) 이름(소스명)
 - time_out
 - match_point
 - set_point
 - set_A_1, set_A_2, set_A_3
 - set_B_1, set_B_2, set_B_3
+- extra_time (추가시간 오버레이)    <!-- 72.1 -->
+- timer_end (선택, 카운트다운 종료 시 1~2초 표시)    <!-- 72.2 -->
 설명: sceneItemId를 찾아 SetSceneItemEnabled로 표시/숨김 처리합니다. 현재 세트 승 표시 토글은 A/B 각각 3개까지 지원합니다.
 
+타이머 관련 입력(Input)    <!-- 73.1 -->
+- timer (Text(GDI+), 1초 주기로 "mm:ss" 텍스트 업데이트)    <!-- 73.2 -->
+
 팀(Team) 세팅으로 추가되는 입력명 규칙
-- 세팅에서 name을 정의하면, OBS에는 name_A, name_B 두 입력을 각각 생성해야 합니다.
-  예) name=logo → logo_A, logo_B (팀 A/B 각각에 적용)
-
-경기(Match) 세팅으로 추가되는 입력명 규칙
-- 세팅에서 name을 정의하면, OBS에는 동일한 이름의 입력을 하나 생성합니다.
-  예) name=banner → banner
-
-타입별 Input Settings 키 매핑
-- TEXT → text (Text(GDI+) 입력)
-- IMAGE → file (Image Source의 file 속성)
-- VIDEO → local_file (Media Source의 local_file 속성)
-권장 OBS 입력 종류 매핑
-- TEXT: Text(GDI+)
-- IMAGE: Image Source (image_source)
-- VIDEO: Media Source (ffmpeg_source)
-
 
 ## 로컬 자산(Local Asset) 경로와 파일명 매칭
 - 세팅 화면의 드롭존에서 선택한 파일은 “파일명만” 저장됩니다.
@@ -107,7 +95,6 @@ bun dev
 1) 로그인(/obs/login)
 - 포트(기본 4455)와 비밀번호(사용 시)를 입력 후 “CONNECT OBS”
 - 인증 성공 시 자동으로 대시보드(/obs/dashboard)로 이동
-
 2) 대시보드(/obs/dashboard)
 - 좌측: OBS 씬 목록 → 클릭 시 SetCurrentProgramScene으로 즉시 전환
 - 중앙: 경기 제목(title) 선택, 팀 A/B 선택, 점수 조작, 세트 종료/리셋/타임아웃 토글 등의 컨트롤
@@ -116,6 +103,7 @@ bun dev
 - 세트 종료(Finish set): sets 배열 갱신 후 점수 리셋
 - 라운드 타입 판단에 따라 match_point 또는 set_point 씬 아이템을 표시/숨김
 - set_A_1..3 / set_B_1..3: 현재 세트 승수를 기준으로 표시/숨김(최대 3개)
+- 타이머 패널: 모드(Count Up/Down) 선택, Down 시작값(초) 입력, Start/Pause/Reset, +10s/-10s, Extra Time 토글(옵션: 애니메이션 재시작 트릭) 제공    <!-- 118.1 -->
 
 3) 설정(/obs/setting)
 - 경기 제목(titleList), 팀 목록(teamList), 세트 점수 배열(setList) 관리
@@ -149,6 +137,12 @@ bun dev
 - 비밀번호 사용 시 앱에 동일 비밀번호를 입력해야 인증됩니다.
 - 자산 교체(IMAGE/VIDEO)는 파일명을 저장하고, Settings의 Local Asset Path와 결합된 경로가 OBS에 적용됩니다.
 
+- 타이머가 갱신되지 않음    <!-- 153.1 -->
+  - OBS에 timer(Text(GDI+)) 입력이 존재하는지, 이름이 정확한지 확인    <!-- 153.2 -->
+  - 1초 주기이며 동일 텍스트는 중복 전송을 생략합니다(lastTimerText 최적화).    <!-- 153.3 -->
+- Extra Time이 표시되지 않음    <!-- 153.4 -->
+  - extra_time 씬 아이템이 현재 프로그램 씬에 존재하고 이름이 정확한지 확인    <!-- 153.5 -->
+  - 재시작 트릭은 off→on 토글이며, 씬 적용(ApplyScene)이 함께 호출됩니다.    <!-- 153.6 -->
 
 ## 트러블슈팅
 - AUTHENTICATED로 전환되지 않음
