@@ -127,4 +127,14 @@ export const TeamSettingComponent = ({
 
 const TeamSettingElementWrapper = styled.div`
   display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #ffffff;
+
+  > div:first-of-type { flex: 1 1 120px; }
+  > div:nth-of-type(2) { flex: 0 0 96px; }
+  > div:nth-of-type(3) { flex: 1 1 100%; }
 `;

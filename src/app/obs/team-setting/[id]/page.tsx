@@ -1,14 +1,11 @@
 "use client";
 
 import styled from "@emotion/styled";
-import { Button, Select, TextField } from "@mui/material";
-import { useRouter } from "next/router";
+import { Button } from "@mui/material";
 import React from "react";
 import { useLocalStorage } from "usehooks-ts";
-import { useDropzone } from "react-dropzone";
 import { TeamSettingComponent } from "./_components/TeamSettingComponent";
 import {
-  OBSElementProperties,
   TeamSettingElement,
   TeamSettingElementType,
 } from "./_constants/constants";
@@ -28,32 +25,6 @@ const TeamSettingPage = ({ params }: any) => {
 
   const teamName = teamList[parseInt(teamId)];
 
-  const GetInputSettings = (
-    name: string,
-    type: TeamSettingElementType,
-    value: string
-  ) => {
-    return {
-      [OBSElementProperties[type]]: value,
-    };
-  };
-
-  const changeSetting = (
-    idx: number,
-    name: string,
-    type: TeamSettingElementType,
-    value: string
-  ) => {
-    setTeamSetting((prev) => ({
-      ...prev,
-      [teamId]: [
-        ...prev[teamId].slice(0, idx),
-        { name, type, value },
-        ...prev[teamId].slice(idx + 1),
-      ],
-    }));
-  };
-
   const addSetting = (
     name: string,
     type: TeamSettingElementType,
@@ -68,8 +39,9 @@ const TeamSettingPage = ({ params }: any) => {
   return !Object.keys(teamSetting).includes(teamId) ? (
     <div>Team {teamId} Doesn`t Exist</div>
   ) : (
-    <div>
-      <div>Team {teamName} Setting page</div>
+    <StyledWrapper>
+      <h1>{teamName} 팀 자산</h1>
+      <p>OBS 입력 이름은 요소 이름 뒤에 _A, _B가 붙습니다.</p>
       {teamSetting[teamId].map((e, idx) => (
         <TeamSettingComponent
           key={idx}
@@ -79,17 +51,23 @@ const TeamSettingPage = ({ params }: any) => {
           setTeamSetting={setTeamSetting}
         />
       ))}
-      <Button onClick={() => addSetting("", TeamSettingElementType.IMAGE, "")}>
+      <Button variant="outlined" onClick={() => addSetting("", TeamSettingElementType.IMAGE, "")}>
         ADD
       </Button>
-    </div>
+    </StyledWrapper>
   );
 };
 export default TeamSettingPage;
 
 const StyledWrapper = styled.div`
-  padding: 32px;
-  padding-top: 0px;
+  width: min(100%, 420px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 24px 14px;
   display: flex;
   flex-direction: column;
+  gap: 10px;
+
+  h1 { margin: 0; font-size: 24px; }
+  > p { margin: 0 0 10px; color: #8d94a3; font-size: 11px; }
 `;

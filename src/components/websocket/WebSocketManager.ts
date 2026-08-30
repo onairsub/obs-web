@@ -24,13 +24,11 @@ export default class WebSocketManager {
 
     this.socket.onopen = () => {
       this.isConnected = true;
-      console.log("WebSocket 연결 성공!");
       if (onOpen) onOpen();
     };
 
     this.socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      console.log("메시지 수신:", message);
       if (onMessage) onMessage(message);
     };
 
@@ -41,7 +39,6 @@ export default class WebSocketManager {
 
     this.socket.onclose = () => {
       this.isConnected = false;
-      console.log("WebSocket 연결이 닫혔습니다.");
       if (onClose) onClose();
     };
   }
@@ -49,9 +46,6 @@ export default class WebSocketManager {
   sendMessage(message: object) {
     if (this.isConnected && this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(message));
-      console.log("메시지를 보냈습니다:", message);
-    } else {
-      console.log("WebSocket이 아직 연결되지 않았습니다.");
     }
   }
 

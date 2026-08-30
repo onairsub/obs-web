@@ -2,105 +2,61 @@
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
 import { StatusCode } from "@/constants/statusCode";
-import styled from "@emotion/styled";
-import { Button, TextField } from "@mui/material";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useLocalStorage } from "usehooks-ts";
+import styles from "./page.module.css";
 
-const Login = () => {
+export default function LoginPage() {
   const router = useRouter();
-  const { connectStatus } = useWebSocket();
-
-  const [authStatus, setAuthStatus, removeAuthStatus] = useLocalStorage(
-    "OBS-AUTH",
-    { port: 4455, password: "" }
-  );
-
-  const [port, setPort] = useState(4455);
-  const [password, setPassword] = useState("");
-
-  const connectOBS = () => {
-    setAuthStatus({
-      port,
-      password,
-    });
-  };
-
-  useEffect(() => {
-    setPort(authStatus.port);
-    setPassword(authStatus.password);
-  }, [authStatus]);
+  const { connectStatus, reconnect } = useWebSocket();
+  const [authStatus, setAuthStatus] = useLocalStorage("OBS-AUTH", {
+    port: 4455,
+    password: "",
+  });
+  const [, setPreviewMode] = useLocalStorage("OBS-PREVIEW_MODE", false);
+  const [port, setPort] = useState(authStatus.port);
+  const [password, setPassword] = useState(authStatus.password);
 
   useEffect(() => {
     if (connectStatus === StatusCode.AUTHENTICATED) {
-      console.log("move to dashboard");
-      router.push("/obs/dashboard");
+      router.replace("/obs/sports");
     }
-  }, [router, connectStatus]);
+  }, [connectStatus, router]);
+
+  const connect = (event: FormEvent) => {
+    event.preventDefault();
+    setPreviewMode(false);
+    setAuthStatus({ port, password });
+    reconnect();
+  };
+
+  const openPreview = () => {
+    setPreviewMode(true);
+    router.replace("/obs/sports");
+  };
 
   return (
-    <StyledWrapper>
-      <h1>OBS Controller</h1>
-      <div>
-        <TextField
-          value={port}
-          inputMode="numeric"
-          onChange={(e) => setPort(parseInt(e.target.value))}
-          sx={{ width: "400px" }}
-          label="port"
-        />
-      </div>
-      <div>
-        <TextField
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          sx={{ width: "400px" }}
-          label="password"
-        />
-      </div>
-      <div>
-        <Button onClick={connectOBS} variant="outlined">
-          CONNECT OBS
-        </Button>
-      </div>
-      <div>
-        <a href="https://github.com/obsproject/obs-studio/releases/tag/28.1.2">
-          INSTALL OBS
-        </a>
-      </div>
-    </StyledWrapper>
+    <main className={styles.page}>
+      <section className={styles.card}>
+        <h1>OBS Controller</h1>
+        <p className={styles.description}>OBS WebSocket에 연결하세요.</p>
+        <form onSubmit={connect} className={styles.form}>
+          <label>
+            <span>WebSocket 포트</span>
+            <input type="number" min={1} max={65535} value={port} onChange={(event) => setPort(Number(event.target.value))} />
+          </label>
+          <label>
+            <span>비밀번호</span>
+            <input type="password" value={password} placeholder="인증을 사용하지 않으면 비워두세요" onChange={(event) => setPassword(event.target.value)} />
+          </label>
+          <button type="submit">{connectStatus === StatusCode.CONNECTED ? "CONNECTING…" : "CONNECT OBS"}</button>
+        </form>
+        <button type="button" className={styles.previewButton} onClick={openPreview}>OBS 없이 프리뷰</button>
+        <p className={styles.previewHint}>점수, 타이머와 화면 구성을 연결 없이 시험할 수 있습니다.</p>
+        <a className={styles.install} href="https://github.com/obsproject/obs-studio/releases/tag/28.1.2">INSTALL OBS</a>
+        <p className={styles.hint}>OBS 28.1.2+ · WebSocket v5</p>
+      </section>
+    </main>
   );
-};
-
-export default Login;
-
-const StyledWrapper = styled.div`
-  display: flex;
-  flex-direction: column;
-  padding: 64px;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  height: 100vh;
-
-  h1 {
-    font-size: 48px;
-    font-weight: bold;
-  }
-
-  > div {
-    width: 400px;
-  }
-
-  button {
-    width: 400px;
-  }
-
-  a {
-    display: block;
-    width: 100%;
-    text-align: center;
-    color: #999999;
-  }
-`;
+}

@@ -45,6 +45,7 @@ const WebSocketContext = createContext<{
   responseBuffer: RecentResponse[];
   clearBuffer: () => void;
   popBuffer: null | (() => RecentResponse);
+  reconnect: () => void;
 }>({
   webSocketManager: null,
   authentication: null,
@@ -53,6 +54,7 @@ const WebSocketContext = createContext<{
   responseBuffer: [],
   clearBuffer: () => {},
   popBuffer: null,
+  reconnect: () => {},
 });
 
 export const WebSocketProvider = ({
@@ -68,6 +70,7 @@ export const WebSocketProvider = ({
   const [authentication, setAuthentication] = useState<Authentication>(null);
   const [recentResponse, setRecentResponse] = useState<RecentResponse>(null);
   const [responseBuffer, setResponseBuffer] = useState<RecentResponse[]>([]);
+  const [reconnectToken, setReconnectToken] = useState(0);
   const webSocketManager = useRef(
     new WebSocketManager(`ws://localhost:${port}`)
   ).current;
@@ -84,8 +87,12 @@ export const WebSocketProvider = ({
     return res;
   };
 
+  const reconnect = () => setReconnectToken((current) => current + 1);
+
   useEffect(() => {
     // WebSocket 연결 설정
+    setConnectStatus(0);
+    setAuthentication(null);
     webSocketManager.url = `ws://localhost:${port}`;
     webSocketManager.connect({
       onOpen: () => {
@@ -96,6 +103,7 @@ export const WebSocketProvider = ({
           setAuthentication(message.d.authentication);
           if (!password) {
             console.log("Authentication required, but password field is null");
+            setConnectStatus(StatusCode.UNAUTHORIZED);
             return;
           }
           webSocketManager.sendMessage({
@@ -119,15 +127,15 @@ export const WebSocketProvider = ({
         }
         if (message.op === 2) {
           setConnectStatus(StatusCode.AUTHENTICATED);
-          console.log("Authentication success!");
         }
         if (message.op === 7) {
-          console.log("response");
           setRecentResponse(message.d);
-          setResponseBuffer((prev) => [...prev, message.d]);
+          setResponseBuffer((prev) => [...prev.slice(-199), message.d]);
         }
       },
-      onError: (error: any) => {},
+      onError: () => {
+        setConnectStatus(StatusCode.UNAUTHORIZED);
+      },
       onClose: () => {
         setConnectStatus(StatusCode.UNAUTHORIZED);
       },
@@ -136,7 +144,7 @@ export const WebSocketProvider = ({
     return () => {
       webSocketManager.disconnect();
     };
-  }, [webSocketManager, password, port]);
+  }, [webSocketManager, password, port, reconnectToken]);
 
   return (
     <WebSocketContext.Provider
@@ -148,6 +156,7 @@ export const WebSocketProvider = ({
         responseBuffer,
         clearBuffer,
         popBuffer,
+        reconnect,
       }}
     >
       {children}

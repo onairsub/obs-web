@@ -1,293 +1,169 @@
-# OBS Controller (Next.js)
+# OBS Multi-Sports Controller
 
-OBS Studio(28.1.2+ 내장 WebSocket v5)를 로컬에서 실시간으로 제어하는 웹 앱입니다. 점수판 텍스트(score_A/score_B/set), 팀/경기별 자산(이미지/비디오/텍스트), 씬 아이템(time_out, match_point, set_point, set_A_1..3, set_B_1..3) 표시/숨김 및 씬 전환을 지원합니다.
+OBS Studio 옆에 작은 세로 창으로 띄워 사용하는 스포츠 중계 컨트롤러입니다. 브라우저가 `ws://localhost:{port}`를 통해 OBS WebSocket v5에 직접 연결하며 별도의 서버나 데이터베이스는 사용하지 않습니다.
 
-이 문서는 다음을 안내합니다.
+지원 종목:
 
-- OBS(WebSocket v5) 설정 방법과 인증 절차
-- 실시간으로 바꾸고자 하는 요소의 소스/입력(입력=Input) 이름 규칙
-- 앱 사용법(로그인 → 대시보드 → 세팅/팀/매치 편집)
-- 로컬 자산 경로 설정 및 파일 매칭 방식
-- 점수판/세트/세트포인트/매치포인트 표시 로직
-- 제약 사항과 트러블슈팅
+- 축구: `/obs/soccer`
+- 농구: `/obs/basketball`
+- 야구: `/obs/baseball`
+- 배구: `/obs/volleyball`
 
-## 요구 사항
+로그인에 성공하면 `/obs/sports`에서 종목을 선택합니다.
 
-- OBS Studio 28.1.2 이상 (내장 OBS WebSocket v5 프로토콜 사용)
-- 동일 PC에서 앱과 OBS를 함께 실행(현재 원격 호스트 미지원, localhost 전용)
-- 기본 WebSocket 포트: 4455 (OBS와 앱에서 동일 값 사용)
-- 비밀번호 사용 시 앱 로그인 페이지에 동일 비밀번호 입력
+앱 안의 `/obs/help`에서 종목별 OBS 소스 이름과 준비 순서를 확인할 수 있습니다. 스포츠 선택 화면과 각 컨트롤러 하단의 `도움말` 링크로 열면 현재 종목이 자동으로 선택됩니다.
 
-## 빠른 시작
+OBS가 실행 중이지 않을 때는 로그인 화면의 `OBS 없이 프리뷰` 버튼으로 들어갈 수 있습니다. 프리뷰 모드에서는 점수, 타이머, 세트와 카운트 조작이 브라우저 안에서 정상 동작하고 저장되지만 OBS WebSocket 요청은 전송되지 않습니다. 컨트롤러 상단의 `Preview`를 누르면 언제든 연결 화면으로 돌아갑니다.
 
-1. 의존성 설치 및 개발 서버 실행
+## 요구 사항과 실행
+
+- OBS Studio 28.1.2 이상
+- OBS와 이 웹 앱을 같은 컴퓨터에서 실행
+- OBS WebSocket v5 활성화(기본 포트 `4455`)
+- Node.js와 pnpm
 
 ```bash
-npm install
-npm run dev
-# 또는
-yarn
-yarn dev
-# 또는
 pnpm install
 pnpm dev
-# 또는
-bun install
-bun dev
 ```
 
-2. 브라우저에서 http://localhost:3000/obs 접속
+브라우저에서 `http://localhost:3000/obs`를 엽니다. OBS의 `도구 → WebSocket 서버 설정`에서 서버를 활성화하고, 앱 로그인 화면에 같은 포트와 비밀번호를 입력합니다.
+
+## OBS 소스 준비 원칙
+
+이 앱은 OBS 입력 및 씬 아이템의 이름을 정확하게 찾아 제어합니다. 대소문자와 언더스코어까지 아래 표와 일치해야 합니다.
+
+- 텍스트 값: OBS의 텍스트 입력(Text GDI+ 또는 FreeType 2)으로 생성
+- 표시/숨김: 현재 프로그램 씬 안의 씬 아이템으로 생성
+- 이미지 자산: Image Source, 속성 `file` 사용
+- 영상 자산: Media Source, 속성 `local_file` 사용
+- 사용하지 않는 기능은 해당 OBS 소스를 만들지 않아도 됩니다.
+
+## 모든 종목 공통 소스
+
+| OBS 이름 | 종류 | 앱에서 보내는 값 |
+| --- | --- | --- |
+| `title` | 텍스트 입력 | 선택한 경기 제목 |
+| `team_A` | 텍스트 입력 | A 팀 이름 |
+| `team_B` | 텍스트 입력 | B 팀 이름 |
+| `score_A` | 텍스트 입력 | A 팀 점수 |
+| `score_B` | 텍스트 입력 | B 팀 점수 |
+
+컨트롤러 상단의 장면 선택 메뉴는 OBS의 프로그램 장면을 전환합니다. 표시/숨김 조작은 현재 프로그램 장면에 있는 같은 이름의 아이템을 모두 변경합니다.
+
+## 축구 설정
+
+제공 조작: 득점, 전후반/연장/PK 구간, 카운트업 경기 시계, 추가시간, 퇴장 수, 승부차기 점수.
+
+| OBS 이름 | 종류 | 값/동작 |
+| --- | --- | --- |
+| `game_clock` | 텍스트 입력 | `MM:SS` 경기 시계 |
+| `period` | 텍스트 입력 | `전반`, `HT`, `후반`, `연장1`, `연장2`, `PK`, `FT` |
+| `added_time` | 텍스트 입력 + 씬 아이템 | `+N`; 0이면 숨김 |
+| `red_cards_A` | 텍스트 입력 | A 팀 퇴장 수 |
+| `red_cards_B` | 텍스트 입력 | B 팀 퇴장 수 |
+| `penalties_A` | 텍스트 입력 | A 팀 승부차기 득점 |
+| `penalties_B` | 텍스트 입력 | B 팀 승부차기 득점 |
+
+설정 화면에서 전반·후반·연장 전후반 시간을 분 단위로 지정합니다. 컨트롤러에는 전반 시작, 후반 시작, 연장 시작, 연장 후반 시작 프리셋이 설정값을 합산한 시각으로 표시됩니다. 시계는 자동으로 구간을 전환하지 않으므로 실제 경기 진행에 맞춰 운영자가 구간을 선택합니다.
+
+## 농구 설정
+
+농구는 게임클락과 샷클락을 서로 독립된 타이머로 제공합니다. `둘 다 시작/정지`와 개별 시작/정지를 모두 지원합니다.
+
+제공 조작: 1·2·3점 득점, 게임클락, 24/14초 샷클락, 쿼터, 팀 파울, 타임아웃, 공격권.
+
+| OBS 이름 | 종류 | 값/동작 |
+| --- | --- | --- |
+| `game_clock` | 텍스트 입력 | 설정한 쿼터·연장 시간 |
+| `shot_clock` | 텍스트 입력 | 설정한 기본·공격 리바운드 시간; 5초 미만은 `4.9` 형식 |
+| `period` | 텍스트 입력 | `Q1`, `Q2`, `Q3`, `Q4`, `OT`, `FT` |
+| `fouls_A` | 텍스트 입력 | A 팀 팀 파울 |
+| `fouls_B` | 텍스트 입력 | B 팀 팀 파울 |
+| `timeouts_A` | 텍스트 입력 | A 팀 사용/잔여 표시에 활용할 숫자 |
+| `timeouts_B` | 텍스트 입력 | B 팀 사용/잔여 표시에 활용할 숫자 |
+| `possession_A` | 씬 아이템 | A 팀 공격권일 때 표시 |
+| `possession_B` | 씬 아이템 | B 팀 공격권일 때 표시 |
+
+게임클락은 1분 미만에서 `59.9` 형식으로 표시합니다. 샷클락은 게임클락이 멈춰도 독립 실행할 수 있으므로 심판 판정과 실제 경기 상황에 맞춰 별도로 보정할 수 있습니다.
+
+## 야구 설정
+
+제공 조작: 득점, 이닝과 초/말, B/S/O, 주자, 안타, 실책.
+
+| OBS 이름 | 종류 | 값/동작 |
+| --- | --- | --- |
+| `inning` | 텍스트 입력 | 현재 이닝 숫자 |
+| `inning_half` | 텍스트 입력 | `TOP` 또는 `BOTTOM` |
+| `balls` | 텍스트 입력 | 볼 카운트 0~3 |
+| `strikes` | 텍스트 입력 | 스트라이크 카운트 0~2 |
+| `outs` | 텍스트 입력 | 아웃 카운트 0~2 |
+| `hits_A`, `hits_B` | 텍스트 입력 | 팀별 안타 |
+| `errors_A`, `errors_B` | 텍스트 입력 | 팀별 실책 |
+| `base_1` | 씬 아이템 | 1루 주자 표시 |
+| `base_2` | 씬 아이템 | 2루 주자 표시 |
+| `base_3` | 씬 아이템 | 3루 주자 표시 |
+
+네 번째 볼은 타석 카운트를 초기화하고, 세 번째 스트라이크는 아웃을 올립니다. 세 번째 아웃은 주자를 비우고 공수를 교대하며, 말 공격 종료 시 다음 이닝으로 넘어갑니다. 현장 판정 정정은 `카운트 초기화`와 이닝 ± 버튼으로 보정합니다.
+
+## 배구 설정
+
+제공 조작: 득점, 세트 승수, 자동 세트/매치포인트, 서브권, 타임아웃, 세트 종료.
+
+| OBS 이름 | 종류 | 값/동작 |
+| --- | --- | --- |
+| `set` | 텍스트 입력 | `1 SET` 형식 |
+| `sets_A` | 텍스트 입력 | A 팀 세트 승수 |
+| `sets_B` | 텍스트 입력 | B 팀 세트 승수 |
+| `timeouts_A` | 텍스트 입력 | A 팀 타임아웃 사용 수 |
+| `timeouts_B` | 텍스트 입력 | B 팀 타임아웃 사용 수 |
+| `serve_A` | 씬 아이템 | A 팀 서브권 표시 |
+| `serve_B` | 씬 아이템 | B 팀 서브권 표시 |
+| `time_out` | 씬 아이템 | 타임아웃 배너 표시 |
+| `timeout_team` | 텍스트 입력 | 타임아웃 팀 이름 |
+| `set_point` | 씬 아이템 | 다음 득점으로 세트 승리가 가능한 경우 표시 |
+| `match_point` | 씬 아이템 | 다음 득점으로 경기 승리가 가능한 경우 표시 |
+| `point_team` | 텍스트 입력 | 세트/매치포인트 팀 이름 |
+| `set_A_1`~`set_A_3` | 씬 아이템 | A 팀 세트 승 표시 |
+| `set_B_1`~`set_B_3` | 씬 아이템 | B 팀 세트 승 표시 |
+
+세트 목표 점수는 설정 화면의 `세트별 점수`를 사용합니다. 기본값은 `[25, 25, 15]`이며 항상 2점 차 승리를 적용합니다. 점수 조건을 만족해야 `세트 종료` 버튼이 활성화됩니다.
 
-3. OBS(WebSocket) 설정 후 앱 로그인 화면에서 포트/비밀번호 입력 → CONNECT OBS
+## 종목별 설정
 
-## OBS 설정하기 (WebSocket v5)
+설정 화면 상단에서 축구, 농구, 야구, 배구를 선택합니다.
 
-1. OBS 실행 → Settings(설정) → WebSocket Server 메뉴로 이동
-2. Enable(활성화) 체크
-3. Server Port: 4455(기본값 권장, 변경 시 앱 로그인 포트도 동일하게 입력)
-4. Authentication(비밀번호) 사용 여부 선택
-   - 비밀번호 사용: 앱 로그인 화면에 동일 비밀번호 입력 필요
-   - 비밀번호 미사용: 앱에서 비밀번호 입력 칸은 비워둠
-5. OBS에서 필요한 입력과 씬 아이템을 아래 ‘명명 규칙’대로 생성
+- 축구: 전반 시간, 후반 시간, 연장 전·후반 시간
+- 농구: 쿼터 시간, 연장 시간, 기본 샷클락, 공격 리바운드 샷클락
+- 야구: 정규 이닝 수
+- 배구: 세트 수와 세트별 목표 점수
+- 공통: 경기 목록과 팀 목록 추가·수정·삭제
 
-인증 플로우 참고(내부 동작):
+로컬 이미지·영상 자산 설정은 현재 설정 화면과 저장 파일에서 제외합니다.
 
-- Hello(op=0) 수신 → Identify(op=1) 전송 → Authenticated(op=2) 수신 시 연결 완료
-- 비밀번호 사용 시 SHA256(password+salt)→base64 → SHA256(prev+challenge)→base64 로 인증 해시 생성
+## 설정 저장과 운영 상태
 
-## OBS 소스/입력/씬 아이템 명명 규칙 (중요)
+- `SAVE {SPORT} SETTINGS`는 선택한 한 종목의 설정과 공통 경기·팀 목록을 저장
+- 파일명은 `obs-soccer-settings.json`처럼 종목을 포함
+- JSON 안에도 `sport`, `sportLabel`, `settings`가 기록됨
+- 불러오면 파일의 `sport`에 맞춰 설정 탭과 컨트롤 값이 함께 변경됨
+- 이전 형식의 `setList`가 있는 파일은 배구 설정 파일로 불러올 수 있음
+- 종목별 점수와 타이머는 브라우저 LocalStorage에 자동 저장
+- 타이머는 시작 시각을 함께 저장하므로 페이지 새로고침 후에도 경과 시간을 복원
+- OBS 접속 포트와 비밀번호도 `OBS-AUTH`에 저장되므로 공용 PC에서는 브라우저 데이터를 삭제할 것
 
-앱은 OBS의 이름(sourceName/inputName)을 정확히 키로 사용합니다. 이름 불일치 시 제어가 되지 않습니다.
+## 문제 해결
 
-필수 텍스트 입력(Input)
+- 연결 실패: OBS WebSocket 활성화, 포트, 비밀번호, OBS 28.1.2 이상 여부 확인
+- 텍스트 미변경: 입력 이름과 종류를 확인하고 대소문자까지 일치시킬 것
+- 표시 토글 실패: 해당 아이템이 현재 프로그램 씬 안에 있는지 확인한 뒤 상단 새로고침 버튼 사용
+- 설정값 미반영: 해당 종목 컨트롤 화면으로 돌아간 뒤 프리셋 버튼의 시간이 바뀌었는지 확인
 
-- title
-- team_A
-- team_B
-- score_A
-- score_B
-- set
-  권장 입력 종류: Text(GDI+) (SetInputSettings로 { text: "..." } 적용)
-  표시/숨김 토글 대상 씬 아이템(Scene Item) 이름(소스명)
-- time_out
-- match_point
-- set_point
-- set_A_1, set_A_2, set_A_3
-- set_B_1, set_B_2, set_B_3
-- extra_time (추가시간 오버레이)
-- timer_end (선택, 카운트다운 종료 시 1~2초 표시)
-  설명: sceneItemId를 찾아 SetSceneItemEnabled로 표시/숨김 처리합니다. 현재 세트 승 표시 토글은 A/B 각각 3개까지 지원합니다.
+## 주요 코드
 
-타이머 관련 입력(Input)
-
-- timer (Text(GDI+), 1초 주기로 "mm:ss" 텍스트 업데이트)
-
-팀(Team) 세팅으로 추가되는 입력명 규칙
-
-## 로컬 자산(Local Asset) 경로와 파일명 매칭
-
-- 세팅 화면의 드롭존에서 선택한 파일은 “파일명만” 저장됩니다.
-- OBS에 실제로 전달되는 경로는 Settings의 “local asset path”(베이스 경로)와 파일명을 결합하여 생성됩니다.
-- 결합 규칙: combinePath(basePath, fileName)로 OS에 맞는 구분자를 사용해 안전하게 join
-
-예시
-
-- Windows: base=C:\Assets, file=teamA.png → C:\Assets\teamA.png
-- macOS/Linux: base=/Users/john/Assets, file=teamA.png → /Users/john/Assets/teamA.png
-
-사용 팁
-
-- 먼저 베이스 경로 폴더를 정하고(예: C:\Assets), 그 폴더 안에 사용할 이미지/영상 파일을 복사해 둔 뒤, 세팅 화면에서 해당 파일을 선택하세요.
-
-## 앱 사용법
-
-1. 로그인(/obs/login)
-
-- 포트(기본 4455)와 비밀번호(사용 시)를 입력 후 “CONNECT OBS”
-- 인증 성공 시 자동으로 대시보드(/obs/dashboard)로 이동
-
-2. 대시보드(/obs/dashboard)
-
-- 좌측: OBS 씬 목록 → 클릭 시 SetCurrentProgramScene으로 즉시 전환
-- 중앙: 경기 제목(title) 선택, 팀 A/B 선택, 점수 조작, 세트 종료/리셋/타임아웃 토글 등의 컨트롤
-- 점수(score_A/score_B) 변경: 해당 텍스트 입력을 즉시 업데이트
-- 현재 세트(set) 텍스트: “{n} SET” 형식으로 갱신
-- 세트 종료(Finish set): sets 배열 갱신 후 점수 리셋
-- 라운드 타입 판단에 따라 match_point 또는 set_point 씬 아이템을 표시/숨김
-- set_A_1..3 / set_B_1..3: 현재 세트 승수를 기준으로 표시/숨김(최대 3개)
-- 타이머 패널: 모드(Count Up/Down) 선택, Down 시작값(초) 입력, Start/Pause/Reset, +10s/-10s, Extra Time 토글 제공 <!-- 118.1 -->
-
-3. 설정(/obs/setting)
-
-- 경기 제목(titleList), 팀 목록(teamList), 세트 점수 배열(setList) 관리
-- 팀/경기 세팅 페이지 이동 링크 제공
-- Local Asset Path 설정(자산 경로 베이스)
-- 설정 저장/로드(settings.json import/export) 지원
-
-4. 팀 세팅(/obs/team-setting/[id])
-
-- 팀별로 동적 요소를 정의
-- name(예: logo), type(TEXT/IMAGE/VIDEO), value(텍스트 또는 파일명) 입력
-- IMAGE/VIDEO는 드래그앤드롭으로 파일명 선택
-- 실제 OBS 입력명은 {name}\_A와 {name}\_B 형태로 만들어야 앱이 제어합니다.
-
-5. 매치 세팅(/obs/match-setting/[id])
-
-- 경기별로 동적 요소를 정의(name 그대로 입력명 사용)
-- type에 따라 TEXT/IMAGE/VIDEO를 선택하고 value 입력(텍스트 또는 파일명)
-
-## 라운드 타입/표시 로직
-
-- SET_POINT: 현재 세트 목표 점수에 한 점 모자란 상태에서 리드 중일 때
-- MATCH_POINT: 다음 세트를 따면 승리 확정인 팀이 리드 중일 때
-- NORMAL: 위 두 조건이 아닌 경우
-- 결과에 따라 match_point 또는 set_point 씬 아이템을 표시/숨김합니다.
-
-## 제약/주의사항
-
-- 원격 호스트 미지원: ws://localhost:{port}만 연결 (동일 PC에서 OBS 실행 필수)
-- OBS WebSocket v5 전용: v4와는 호환되지 않습니다.
-- 세트 승 표시 아이템은 A/B 각각 최대 3개(set_A_1..3, set_B_1..3)까지만 지원
-- 입력/씬 아이템 이름 불일치 시 제어 실패(대소문자/언더스코어 포함 정확히 일치 필요)
-- 비밀번호 사용 시 앱에 동일 비밀번호를 입력해야 인증됩니다.
-- 자산 교체(IMAGE/VIDEO)는 파일명을 저장하고, Settings의 Local Asset Path와 결합된 경로가 OBS에 적용됩니다.
-
-- 타이머가 갱신되지 않음 <!-- 153.1 -->
-  - OBS에 timer(Text(GDI+)) 입력이 존재하는지, 이름이 정확한지 확인 <!-- 153.2 -->
-  - 1초 주기이며 동일 텍스트는 중복 전송을 생략합니다(lastTimerText 최적화). <!-- 153.3 -->
-- Extra Time이 표시되지 않음 <!-- 153.4 -->
-  - extra_time 씬 아이템이 현재 프로그램 씬에 존재하고 이름이 정확한지 확인 <!-- 153.5 -->
-  - extra_time 씬 아이템이 현재 프로그램 씬에 존재하고 이름이 정확한지 확인 <!-- 153.5 -->
-
-## 트러블슈팅
-
-- AUTHENTICATED로 전환되지 않음
-  - OBS Settings → WebSocket Server에서 Enable 활성화 여부 확인
-  - 포트가 OBS와 앱에서 동일한지 확인(기본 4455)
-  - 비밀번호 사용 시 앱 로그인에 동일 비밀번호를 입력했는지 확인
-  - 비밀번호 미사용인데 앱에 값이 들어가 있거나 반대 상황인지 확인
-- 점수/텍스트가 갱신되지 않음
-  - 해당 입력(Input)이 Text(GDI+)인지 확인 및 입력명(title, team_A, team_B, score_A, score_B, set) 정확히 매칭
-- 이미지/영상이 바뀌지 않음
-  - IMAGE/VIDEO 입력 종류가 맞는지(Image Source/Media Source)
-  - Settings의 Local Asset Path와 파일명이 올바르게 결합되는지 확인(실제 파일 위치 포함)
-- set_A_x / set_B_x 토글이 반응하지 않음
-  - 해당 소스가 현재 프로그램 씬에 존재하는지, 이름이 정확한지 확인
-
-## 보안/데이터 보관
-
-- 포트/비밀번호 등 접속 정보는 브라우저 LocalStorage(키: OBS-AUTH)에 저장됩니다. 공개 PC에서는 사용 후 삭제를 권장합니다.
-- 세팅(titleList, teamList, setList, team/match settings, local asset path)은 LocalStorage에 저장되며 settings.json으로 export/import 가능합니다.
-
-## 개발자 참고 (선택)
-
-- 연결 상태 코드: CONNECTED(200), AUTHENTICATED(220), UNAUTHORIZED(401)
-- 인증 해시 생성 및 Identify/Hello/Authenticated 핸들링, 요청/응답 버퍼링 등은 src/components/websocket 하위에서 처리됩니다.
-- 주요 파일
-  - src/components/websocket/WebSocketContext.tsx, WebSocketManager.ts
-  - src/app/obs/dashboard/page.tsx, src/app/obs/dashboard/\_utils/pathParser.ts
-  - src/app/obs/setting/page.tsx
-  - src/app/obs/team-setting/[id]/\*\*, src/app/obs/match-setting/[id]/page.tsx
-
-## 참고 링크
-
-- OBS WebSocket API Document: https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md#Requests
-- OBS Studio 28.1.2 릴리스: https://github.com/obsproject/obs-studio/releases/tag/28.1.2
-
-## 다른 종목 활용 가이드 (Multi-sport)
-
-이 앱은 배구 중계를 위해 설계되었지만, 필드의 의미를 재해석하거나 일부 요소를 생략/대체함으로써 다양한 종목(농구, 축구, 야구, 라켓 종목, 이스포츠 등)에 활용 가능합니다. 아래 가이드를 참고해 필요한 입력/씬 아이템만 구성하고, 쓰지 않는 항목은 생성하지 않는 것을 권장합니다.
-
-1. 필드 공용화 개념
-
-- 실시간 업데이트(고정) 필드
-  - 텍스트 입력: title, team_A, team_B, score_A, score_B, set("{n} SET" 형식)
-  - 씬 아이템 토글: time_out(수동), match_point/set_point(자동 로직), set_A_1..3 / set_B_1..3(자동)
-- 세팅 시 일괄 반영(동적 자산)
-  - TeamSetting: {name}\_A, {name}\_B → TEXT/IMAGE/VIDEO
-  - MatchSetting: {name} → TEXT/IMAGE/VIDEO
-- 미사용 처리 원칙
-  - OBS에 해당 이름의 입력/씬 아이템을 생성하지 않으면 앱의 제어가 화면에 영향을 주지 않습니다(로그만 남을 수 있음).
-  - 자동 토글을 끄고 싶으면 setList를 [999, 999, ...]처럼 큰 값으로 설정하여 사실상 발생하지 않도록 할 수 있습니다.
-
-2. 필드 재해석/활용 가이드
-
-- score_A/B: 대부분 종목에서 득점/골/라운드 스코어로 직접 사용.
-- set: 세트/피리어드/쿼터/전반·후반/맵 번호 등으로 재해석 가능. 단, 텍스트가 "{n} SET"로 고정이므로 다음 중 택1:
-  - set 입력을 만들지 않아 미사용 처리
-  - 그래픽에서 " SET" 문구 영역을 마스킹/크롭하여 숨김
-  - "SET" 라벨이 어색하지 않게 디자인
-- time_out: 임의의 이진 오버레이로 재활용 가능(VAR, INJURY, POWER PLAY 등). 소스명은 time_out 유지.
-- match_point / set_point: 세트 기반 자동 토글 로직에 의존하므로 타 종목은 미사용 권장. 필요 시 목표치 근접 경고 등에 응용 가능.
-- set_A_1..3 / set_B_1..3: 시리즈/세트 승수 라이트(최대 3개). Bo3에 적합, Bo5/Bo7에는 한계.
-- Team/Match Setting: 로고, 컬러, 배너, 스폰서 등 경기 시작 전 고정 자산에 적합.
-
-3. 종목별 적용 레시피
-   A) 농구
-
-- 사용: title, team_A/B, score_A/B, time_out(팀 타임아웃 오버레이 등)
-- 선택: set → 피리어드(쿼터)로 재해석("1 SET" 허용 시), 하프타임은 씬 전환으로 연출
-- 미사용: match*point, set_point, set_A/B*\*
-- 세팅 팁: setList=[999,999,999,999]로 자동 토글 억제, 쿼터 라벨은 set 미사용 또는 " SET" 가리기
-
-B) 축구(Football/Soccer)
-
-- 사용: title, team_A/B, score_A/B
-- 선택: time_out → VAR/INJURY/ET 등 이진 오버레이로 재활용
-- 미사용: set, match*point, set_point, set_A/B*\*
-- 세팅 팁: setList=[999,999] 권장, 전반/후반 표시는 별도 그래픽 또는 씬 전환 활용
-
-C) 야구(Baseball)
-
-- 사용: title, team_A/B, score_A/B(득점)
-- 선택: time_out → 리뷰/교체 오버레이 등
-- 미사용: set, match*point, set_point, set_A/B*\*
-- 세팅 팁: setList=[999,999,999] 권장, 이닝/볼카운트는 현재 UI로 실시간 제어 불가(OBS 텍스트 수동 운영 또는 Match/TeamSetting에 텍스트 미리 반영)
-
-D) 라켓 종목(테니스/배드민턴/탁구 등)
-
-- 사용 권장: title, team_A/B, score_A/B(포인트/게임 수), set, set_A/B_1..3, time_out
-- setList 예: 배드민턴/탁구 11 or 21 포인트 기준([11,11,11] 또는 [21,21,21]), 테니스 간이 운용 시 [6,6,6](2게임 차/타이브레이크 세부 규칙은 미지원)
-- 자동 토글: set_point/match_point는 근사 로직으로 활용 가능(정확한 종목별 세부 룰 전부 반영 아님)
-
-E) 이스포츠(LoL, Valorant 등)
-
-- 사용: title, team_A/B, score_A/B(라운드/킬/목표 지표 등), set(맵 번호), set_A/B_1..3(맵 승수 라이트)
-- setList 예: Bo3 기준 Valorant는 [13,13,13]
-- 선택: time_out → 전술 타임아웃/텍 포즈 오버레이
-- 주의: Bo5/Bo7은 set 라이트 3개 한계 → 확장 필요 시 코드 수정 필요
-
-F) 핸드볼/하키/럭비 등 기타
-
-- 사용: title, team_A/B, score_A/B
-- 선택: time_out → 제재/파워플레이 오버레이
-- 미사용: set, match*point, set_point, set_A/B*\*
-- 세팅 팁: setList=[999,999]
-
-4. 운영 팁(OBS/앱)
-
-- 필요한 입력/씬 아이템만 만들기: 쓰지 않는 것은 생성하지 않기(오류 무시되며 화면 영향 없음)
-- 자동 토글 억제: setList를 큰 값으로 설정해 set_point/match_point가 나오지 않게 함
-- set 텍스트 보정: set 입력 미생성 또는 " SET" 영역 마스킹/크롭
-- time_out 재활용: 소스명은 time_out 유지, 그래픽만 교체하면 간편
-- Team/MatchSetting: 경기 시작 전 로고/배너/스폰서/컬러를 일괄 반영(실시간 수치 제어는 현재 미지원)
-- 씬 전환: 전반/하프타임/세트 종료 연출은 대시보드의 씬 전환 버튼으로 처리
-
-5. 현재 한계 및 주의(제약/주의사항도 함께 참고)
-
-- 실시간 제어 필드 제한: score_A/B, set("{n} SET"), time_out 토글, set 라이트, match_point/set_point 자동 로직
-- set 표기 고정: "{n} SET" 포맷 커스텀 불가
-- 세트 승수 라이트: 팀별 최대 3개 고정
-- 다중 카운터/타이머/볼카운트 등 커스텀 숫자 필드는 제공되지 않음
-- Team/MatchSetting 값은 일괄 적용 성격(변경 즉시 실시간 반영 트리거 미제공)
-
-6. 향후 개선 제안(옵션)
-
-- set 라이트 가변 개수(Bo5/Bo7), 사용자 정의 토글 슬롯, 사용자 정의 숫자 카운터 추가
-- set 텍스트 포맷 템플릿(예: "Q{n}", "H{n}", "MAP {n}")
-- 원격 호스트 입력(로컬호스트 외 호스트/토큰)
-- Team/MatchSetting의 변경 즉시 반영 옵션(SetInputSettings 트리거)
-
-## 배포
-
-- Next.js 표준 배포를 따릅니다. https://nextjs.org/docs/app/building-your-application/deploying
+- OBS 인증: `src/components/websocket/WebSocketContext.tsx`
+- OBS 요청 및 현재 씬 제어: `src/components/obs/useOBSControl.ts`
+- 영속 타이머: `src/components/obs/usePersistentClock.ts`
+- 공통 세로형 셸: `src/components/sports/ControllerShell.tsx`
+- 종목별 설정 모델: `src/components/sports/sportSettings.ts`
+- 종목별 조작: `src/components/sports/*Controller.tsx`
