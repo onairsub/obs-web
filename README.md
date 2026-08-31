@@ -1,6 +1,6 @@
 # OBS Multi-Sports Controller
 
-OBS Studio 옆에 작은 세로 창으로 띄워 사용하는 스포츠 중계 컨트롤러입니다. 브라우저가 `ws://localhost:{port}`를 통해 OBS WebSocket v5에 직접 연결하며 별도의 서버나 데이터베이스는 사용하지 않습니다.
+OBS Studio 옆에 작은 세로 창으로 띄워 사용하는 스포츠 중계 컨트롤러입니다. OBS가 실행 중인 컴퓨터의 로컬 웹은 `ws://localhost:{port}`를 통해 OBS WebSocket v5에 직접 연결합니다. 모바일 원격 제어는 Vercel WebSocket Function과 Upstash Redis Pub/Sub을 통해 인터넷으로 중계합니다.
 
 지원 종목:
 
@@ -27,7 +27,33 @@ pnpm install
 pnpm dev
 ```
 
+로컬 개발 실행은 Vercel과 같은 프로토콜을 시험할 수 있도록 웹 페이지와 WebSocket을 함께 실행합니다. 프로덕션 셀프 호스팅은 `pnpm build` 후 `pnpm start`를 사용합니다.
+
 브라우저에서 `http://localhost:3000/obs`를 엽니다. OBS의 `도구 → WebSocket 서버 설정`에서 서버를 활성화하고, 앱 로그인 화면에 같은 포트와 비밀번호를 입력합니다.
+
+## 모바일 원격 제어
+
+OBS 연결이 완료된 로그인 화면이나 스포츠 선택 화면에서 `원격 컨트롤 열기`를 누릅니다. 표시된 Vercel 주소를 휴대폰에서 열면 네트워크가 달라도 접속할 수 있습니다.
+
+- 휴대폰은 OBS에 직접 연결하지 않고 Vercel WebSocket을 통해 호스트 브라우저에 명령을 보냄
+- OBS 비밀번호와 접속 정보는 휴대폰이나 중계 세션으로 전송하지 않음
+- 점수, 타이머, 경기 구간, 팀 상태와 현재 종목은 호스트와 모바일에서 양방향으로 즉시 동기화
+- 모바일에서 종목을 변경하면 호스트 컨트롤러도 같은 종목으로 이동
+- Vercel Function 연결이 만료되면 호스트와 모바일이 자동으로 재연결
+- 링크의 무작위 세션 키는 `원격 컨트롤 닫기`를 누르면 즉시 무효화
+
+### Vercel 원격 중계 설정
+
+무료 운영은 개인·비상업 용도의 Vercel Hobby와 Upstash Redis Free 조합을 권장합니다. 이 앱은 Redis Stream 폴링을 하지 않고 실제 상태 변경과 접속 이벤트만 Pub/Sub으로 전달하므로 간헐적인 경기 운영에서는 무료 명령량을 아껴 사용합니다. 경기가 끝나면 `원격 컨트롤 닫기`를 눌러 연결을 종료하세요.
+
+1. GitHub 저장소를 Vercel의 `New Project`에서 가져와 첫 배포를 실행합니다.
+2. 프로젝트의 `Storage` 또는 Marketplace에서 Upstash를 선택하고 Redis의 Free 데이터베이스를 만듭니다.
+3. 생성한 데이터베이스를 프로젝트에 연결하고 `REDIS_URL` 환경 변수가 추가됐는지 확인합니다. 이 값은 Vercel 서버에만 둡니다.
+4. Vercel 프로젝트 환경 변수에 `NEXT_PUBLIC_REMOTE_ORIGIN=https://배포주소.vercel.app`을 추가한 뒤 다시 배포합니다.
+5. OBS 컴퓨터의 프로젝트 루트에 `.env.local`을 만들고 같은 `NEXT_PUBLIC_REMOTE_ORIGIN`만 입력합니다. 로컬 컴퓨터에는 `REDIS_URL`이 필요하지 않습니다.
+6. OBS 컴퓨터에서 `pnpm install`, `pnpm build`, `pnpm start` 순서로 실행하고 `http://localhost:3000/obs`로 접속합니다.
+
+호스트 화면은 반드시 OBS가 실행 중인 컴퓨터의 로컬 주소로 열어야 합니다. Vercel 배포본은 모바일 화면과 원격 WebSocket 중계를 담당합니다. Redis가 없으면 한 Function 인스턴스 안에서는 동작할 수 있지만 호스트와 모바일이 서로 다른 인스턴스에 배정될 수 있으므로 실제 배포에서는 `REDIS_URL`이 필수입니다. Vercel WebSocket이 Fluid Compute를 사용하도록 프로젝트 설정도 확인하세요.
 
 ## OBS 소스 준비 원칙
 

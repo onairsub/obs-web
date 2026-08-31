@@ -1,0 +1,19 @@
+.page { width: min(100%, 400px); min-height: 100dvh; margin: 0 auto; padding: 30px 16px 24px; color: #202124; background: #fff; }
+.page header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 8px 0 18px; }
+.page header span { color: #1976d2; font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.page h1 { margin: 4px 0 0; font-size: 28px; letter-spacing: -.03em; }
+.page header b { display: flex; align-items: center; gap: 5px; margin-top: 8px; color: #888; font-size: 9px; font-weight: 500; white-space: nowrap; }
+.page header b::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #aaa; }
+.page header b.online { color: #2e7d32; }
+.page header b.online::before { background: #2e7d32; }
+.intro { margin: 0 0 14px; padding: 10px 12px; color: #555; border-left: 3px solid #1976d2; background: #f7f9fc; font-size: 10px; line-height: 1.5; }
+.list { display: grid; gap: 9px; }
+.sport { min-height: 72px; display: grid; grid-template-columns: 1fr 22px; align-items: center; gap: 10px; padding: 12px 15px; border: 1px solid #bdbdbd; border-radius: 4px; }
+.sport > span { display: grid; gap: 5px; }
+.sport strong { color: #222; font-size: 16px; }
+.sport small { color: #777; font-size: 10px; }
+.sport i { color: #1976d2; font-size: 17px; font-style: normal; }
+.closed { margin-top: 24px; padding: 18px; border: 1px solid #e0e0e0; border-radius: 6px; text-align: center; }
+.closed h2 { margin: 0; font-size: 15px; }
+.closed p { margin: 8px 0 0; color: #777; font-size: 10px; line-height: 1.55; }
+.page footer { margin-top: 18px; color: #999; font-size: 9px; text-align: center; }

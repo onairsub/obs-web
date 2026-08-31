@@ -1,6 +1,7 @@
 "use client";
 
 import { useOBSControl } from "@/components/obs/useOBSControl";
+import { useRemoteControl } from "@/components/remote/RemoteControlContext";
 import { SportKey } from "./sportSettings";
 import Link from "next/link";
 import { ReactNode, useCallback, useEffect } from "react";
@@ -22,6 +23,7 @@ type ControllerShellProps = {
 
 export function ControllerShell({ name, sport, accent, children }: ControllerShellProps) {
   const obs = useOBSControl();
+  const remote = useRemoteControl();
   const { connected, setText } = obs;
   const [titleList] = useLocalStorage("OBS_TITLE_LIST", ["친선 경기"]);
   const [teamList] = useLocalStorage("OBS_TEAM_LIST", ["HOME", "AWAY"]);
@@ -30,6 +32,7 @@ export function ControllerShell({ name, sport, accent, children }: ControllerShe
   const [teamB, setTeamB] = useLocalStorage("OBS_TEAM_B", teamList[1] ?? teamList[0] ?? "AWAY");
   const [previewMode] = useLocalStorage("OBS-PREVIEW_MODE", false);
   const [, setSettingsSport] = useLocalStorage<SportKey>("OBS_SETTINGS_SPORT", sport);
+  const [, setActiveSport] = useLocalStorage<SportKey>("OBS_ACTIVE_SPORT", sport);
 
   useEffect(() => {
     if (!connected) return;
@@ -48,7 +51,11 @@ export function ControllerShell({ name, sport, accent, children }: ControllerShe
 
   useEffect(() => {
     setSettingsSport(sport);
-  }, [setSettingsSport, sport]);
+    setActiveSport(sport);
+  }, [setActiveSport, setSettingsSport, sport]);
+
+  const isRemote = remote.role === "remote";
+  const backHref = isRemote ? `/obs/remote/${remote.sessionId}` : "/obs/sports";
 
   const swapTeams = useCallback(() => {
     const previousA = teamA;
@@ -59,12 +66,14 @@ export function ControllerShell({ name, sport, accent, children }: ControllerShe
   return (
     <main className={styles.controller} data-accent={accent}>
       <header className={styles.topbar}>
-        <Link href="/obs/sports" className={styles.back} aria-label="스포츠 선택으로 돌아가기">←</Link>
+        <Link href={backHref} className={styles.back} aria-label="스포츠 선택으로 돌아가기">←</Link>
         <div className={styles.heading}>
           <h1>{name}</h1>
         </div>
         {obs.connected ? (
-          <span className={`${styles.connection} ${styles.connected}`}>Connected</span>
+          <span className={`${styles.connection} ${styles.connected}`}>{isRemote ? "Remote" : "Connected"}</span>
+        ) : isRemote ? (
+          <span className={styles.connection}>Closed</span>
         ) : (
           <Link href="/obs/login" className={`${styles.connection} ${previewMode ? styles.preview : ""}`}>
             {previewMode ? "Preview" : "Disconnected"}
@@ -94,11 +103,12 @@ export function ControllerShell({ name, sport, accent, children }: ControllerShe
       <div className={styles.controls}>{children({ ...obs, teamA, teamB, swapTeams })}</div>
 
       <footer className={styles.footer}>
-        <nav>
+        {!isRemote ? <nav>
           <Link href="/obs/setting" onClick={() => setSettingsSport(sport)}>설정</Link>
           <Link href="/obs/help" onClick={() => setSettingsSport(sport)}>도움말</Link>
-        </nav>
-        <span>OBS Controller</span>
+          <Link href="/obs/login">원격</Link>
+        </nav> : <span>모바일 원격 제어</span>}
+        <span>{isRemote ? (remote.status === "active" ? "연결됨" : "연결 끊김") : "OBS Controller"}</span>
       </footer>
     </main>
   );

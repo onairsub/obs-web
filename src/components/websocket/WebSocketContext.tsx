@@ -60,10 +60,12 @@ const WebSocketContext = createContext<{
 export const WebSocketProvider = ({
   password = null,
   port = 4455,
+  disabled = false,
   children,
 }: {
   password?: string | null;
   port?: number;
+  disabled?: boolean;
   children: any;
 }) => {
   const [connectStatus, setConnectStatus] = useState(0);
@@ -90,6 +92,12 @@ export const WebSocketProvider = ({
   const reconnect = () => setReconnectToken((current) => current + 1);
 
   useEffect(() => {
+    if (disabled) {
+      setConnectStatus(0);
+      webSocketManager.disconnect();
+      return;
+    }
+
     // WebSocket 연결 설정
     setConnectStatus(0);
     setAuthentication(null);
@@ -144,7 +152,7 @@ export const WebSocketProvider = ({
     return () => {
       webSocketManager.disconnect();
     };
-  }, [webSocketManager, password, port, reconnectToken]);
+  }, [disabled, webSocketManager, password, port, reconnectToken]);
 
   return (
     <WebSocketContext.Provider

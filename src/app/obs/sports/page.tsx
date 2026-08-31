@@ -1,6 +1,7 @@
 "use client";
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
+import RemoteControlPanel from "@/components/remote/RemoteControlPanel";
 import { StatusCode } from "@/constants/statusCode";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -54,6 +55,7 @@ export default function SportsPage() {
         <Link href="/obs/setting">경기·팀 설정</Link>
         <Link href="/obs/help">OBS 소스 도움말</Link>
       </div>
+      <RemoteControlPanel enabled={connectStatus === StatusCode.AUTHENTICATED} />
       {previewMode && connectStatus !== StatusCode.AUTHENTICATED && <Link className={styles.connectLink} href="/obs/login">OBS 연결하기</Link>}
     </main>
   );

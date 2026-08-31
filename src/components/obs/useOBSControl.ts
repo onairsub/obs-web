@@ -1,6 +1,7 @@
 "use client";
 
 import { useWebSocket } from "@/components/websocket/WebSocketContext";
+import { useRemoteControl } from "@/components/remote/RemoteControlContext";
 import { StatusCode } from "@/constants/statusCode";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -9,6 +10,8 @@ type OBSSceneItem = { sourceName: string; sceneItemId: number };
 
 export function useOBSControl() {
   const { webSocketManager, connectStatus, recentResponse } = useWebSocket();
+  const { role: remoteRole, status: remoteStatus, sendCommand, obsState } = useRemoteControl();
+  const isRemote = remoteRole === "remote";
   const sequence = useRef(0);
   const pendingToggles = useRef(new Map<string, boolean>());
   const [scenes, setScenes] = useState<OBSScene[]>([]);
@@ -30,21 +33,29 @@ export function useOBSControl() {
   }, [request]);
 
   const refresh = useCallback(() => {
+    if (isRemote) {
+      sendCommand({ action: "refresh" });
+      return;
+    }
     request("GetSceneList");
     request("GetCurrentProgramScene");
-  }, [request]);
+  }, [isRemote, request, sendCommand]);
 
+  // Remote controllers synchronize their stored match state. The host-side
+  // controller applies that state to OBS, avoiding duplicate timer traffic.
   const setText = useCallback((inputName: string, text: string | number) => {
+    if (isRemote) return;
     request("SetInputSettings", {
       inputName,
       inputSettings: { text: String(text) },
       overlay: true,
     });
-  }, [request]);
+  }, [isRemote, request]);
 
   const setInputSettings = useCallback((inputName: string, inputSettings: object) => {
+    if (isRemote) return;
     request("SetInputSettings", { inputName, inputSettings, overlay: true });
-  }, [request]);
+  }, [isRemote, request]);
 
   const applyToggles = useCallback((items: OBSSceneItem[], sceneName: string) => {
     if (!sceneName || pendingToggles.current.size === 0) return;
@@ -61,6 +72,7 @@ export function useOBSControl() {
   }, [request]);
 
   const setVisible = useCallback((sourceName: string, enabled: boolean) => {
+    if (isRemote) return;
     const matchingItems = sceneItems.filter((item) => item.sourceName === sourceName);
     if (currentScene && matchingItems.length > 0) {
       matchingItems.forEach((item) => request("SetSceneItemEnabled", {
@@ -72,18 +84,22 @@ export function useOBSControl() {
     }
     pendingToggles.current.set(sourceName, enabled);
     request("GetCurrentProgramScene");
-  }, [currentScene, request, sceneItems]);
+  }, [currentScene, isRemote, request, sceneItems]);
 
   const switchScene = useCallback((sceneName: string) => {
+    if (isRemote) {
+      sendCommand({ action: "switchScene", sceneName });
+      return;
+    }
     setCurrentScene(sceneName);
     setSceneItems([]);
     request("SetCurrentProgramScene", { sceneName });
     requestSceneItems(sceneName);
-  }, [request, requestSceneItems]);
+  }, [isRemote, request, requestSceneItems, sendCommand]);
 
   useEffect(() => {
-    if (connectStatus === StatusCode.AUTHENTICATED) refresh();
-  }, [connectStatus, refresh]);
+    if (!isRemote && connectStatus === StatusCode.AUTHENTICATED) refresh();
+  }, [connectStatus, isRemote, refresh]);
 
   useEffect(() => {
     if (!recentResponse || recentResponse.requestStatus?.code !== 100) return;
@@ -102,9 +118,9 @@ export function useOBSControl() {
   }, [applyToggles, currentScene, recentResponse, requestSceneItems]);
 
   return {
-    connected: connectStatus === StatusCode.AUTHENTICATED,
-    scenes,
-    currentScene,
+    connected: isRemote ? remoteStatus === "active" : connectStatus === StatusCode.AUTHENTICATED,
+    scenes: isRemote ? obsState.scenes : scenes,
+    currentScene: isRemote ? obsState.currentScene : currentScene,
     setText,
     setInputSettings,
     setVisible,
