@@ -43,12 +43,14 @@ export const SPORT_HELP: Record<SportKey, SportHelp> = {
       { names: ["shot_clock"], type: "텍스트 입력", description: "24/14초 샷클락. 5초 미만은 4.9 형식" },
       { names: ["period"], type: "텍스트 입력", description: "Q1 · Q2 · Q3 · Q4 · OT · FT" },
       { names: ["fouls_A", "fouls_B"], type: "텍스트 입력", description: "A팀·B팀 팀 파울" },
+      { names: ["fouls_A_1 … fouls_A_9", "fouls_B_1 … fouls_B_9"], type: "씬 아이템", description: "팀 파울 수만큼 순서대로 표시되는 선택형 마커" },
       { names: ["timeouts_A", "timeouts_B"], type: "텍스트 입력", description: "A팀·B팀 타임아웃 숫자" },
       { names: ["possession_A", "possession_B"], type: "씬 아이템", description: "현재 공격권 팀의 표시 아이템" },
     ],
     notes: [
       "게임클락과 샷클락은 각각 시작·정지할 수 있고 둘 다 시작/정지 버튼도 제공합니다.",
       "설정에서 쿼터·연장 시간과 기본·공격 리바운드 샷클락을 변경할 수 있습니다.",
+      "파울 마커는 필요한 개수만큼 fouls_A_N, fouls_B_N 씬 아이템을 준비하세요. 파울 수 이하의 마커만 표시됩니다.",
     ],
   },
   baseball: {

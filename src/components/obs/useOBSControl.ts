@@ -14,9 +14,12 @@ export function useOBSControl() {
   const isRemote = remoteRole === "remote";
   const sequence = useRef(0);
   const pendingToggles = useRef(new Map<string, boolean>());
+  const sceneItemsRef = useRef<OBSSceneItem[]>([]);
+  const sceneItemsSceneRef = useRef("");
+  const sceneItemsLoadingRef = useRef("");
+  const currentSceneLoadingRef = useRef(false);
   const [scenes, setScenes] = useState<OBSScene[]>([]);
   const [currentScene, setCurrentScene] = useState("");
-  const [sceneItems, setSceneItems] = useState<OBSSceneItem[]>([]);
 
   const request = useCallback((requestType: string, requestData?: object) => {
     const requestId = `sidecar-${requestType}-${Date.now()}-${sequence.current++}`;
@@ -28,7 +31,8 @@ export function useOBSControl() {
   }, [webSocketManager]);
 
   const requestSceneItems = useCallback((sceneName: string) => {
-    if (!sceneName) return;
+    if (!sceneName || sceneItemsLoadingRef.current === sceneName) return;
+    sceneItemsLoadingRef.current = sceneName;
     request("GetSceneItemList", { sceneName });
   }, [request]);
 
@@ -37,6 +41,10 @@ export function useOBSControl() {
       sendCommand({ action: "refresh" });
       return;
     }
+    sceneItemsRef.current = [];
+    sceneItemsSceneRef.current = "";
+    sceneItemsLoadingRef.current = "";
+    currentSceneLoadingRef.current = true;
     request("GetSceneList");
     request("GetCurrentProgramScene");
   }, [isRemote, request, sendCommand]);
@@ -73,8 +81,11 @@ export function useOBSControl() {
 
   const setVisible = useCallback((sourceName: string, enabled: boolean) => {
     if (isRemote) return;
-    const matchingItems = sceneItems.filter((item) => item.sourceName === sourceName);
-    if (currentScene && matchingItems.length > 0) {
+    const sceneItemsLoaded = Boolean(currentScene) && sceneItemsSceneRef.current === currentScene;
+    const matchingItems = sceneItemsLoaded
+      ? sceneItemsRef.current.filter((item) => item.sourceName === sourceName)
+      : [];
+    if (sceneItemsLoaded) {
       matchingItems.forEach((item) => request("SetSceneItemEnabled", {
         sceneName: currentScene,
         sceneItemId: item.sceneItemId,
@@ -83,8 +94,13 @@ export function useOBSControl() {
       return;
     }
     pendingToggles.current.set(sourceName, enabled);
-    request("GetCurrentProgramScene");
-  }, [currentScene, isRemote, request, sceneItems]);
+    if (currentScene) {
+      requestSceneItems(currentScene);
+    } else if (!currentSceneLoadingRef.current) {
+      currentSceneLoadingRef.current = true;
+      request("GetCurrentProgramScene");
+    }
+  }, [currentScene, isRemote, request, requestSceneItems]);
 
   const switchScene = useCallback((sceneName: string) => {
     if (isRemote) {
@@ -92,7 +108,9 @@ export function useOBSControl() {
       return;
     }
     setCurrentScene(sceneName);
-    setSceneItems([]);
+    sceneItemsRef.current = [];
+    sceneItemsSceneRef.current = "";
+    sceneItemsLoadingRef.current = "";
     request("SetCurrentProgramScene", { sceneName });
     requestSceneItems(sceneName);
   }, [isRemote, request, requestSceneItems, sendCommand]);
@@ -106,14 +124,18 @@ export function useOBSControl() {
     const { requestType, responseData } = recentResponse;
     if (requestType === "GetSceneList") setScenes(responseData?.scenes ?? []);
     if (requestType === "GetCurrentProgramScene") {
+      currentSceneLoadingRef.current = false;
       const sceneName = responseData?.currentProgramSceneName ?? responseData?.sceneName ?? "";
       setCurrentScene(sceneName);
       requestSceneItems(sceneName);
     }
     if (requestType === "GetSceneItemList") {
       const items = responseData?.sceneItems ?? [];
-      setSceneItems(items);
-      applyToggles(items, currentScene);
+      const sceneName = sceneItemsLoadingRef.current || currentScene;
+      sceneItemsLoadingRef.current = "";
+      sceneItemsRef.current = items;
+      sceneItemsSceneRef.current = sceneName;
+      applyToggles(items, sceneName);
     }
   }, [applyToggles, currentScene, recentResponse, requestSceneItems]);
 

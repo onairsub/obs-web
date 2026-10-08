@@ -9,6 +9,8 @@ import { BasketballSettings, DEFAULT_BASKETBALL_SETTINGS } from "./sportSettings
 import styles from "./SportController.module.css";
 
 const PERIODS = ["Q1", "Q2", "Q3", "Q4", "OT", "FT"] as const;
+const MAX_TEAM_FOULS = 9;
+const FOUL_MARKERS = Array.from({ length: MAX_TEAM_FOULS }, (_, index) => index + 1);
 
 function BasketballControls(props: ControllerRenderProps) {
   const { connected, setText, setVisible, teamA, teamB, swapTeams } = props;
@@ -27,7 +29,15 @@ function BasketballControls(props: ControllerRenderProps) {
   useEffect(() => { if (connected) setText("period", period); }, [connected, period, setText]);
   useEffect(() => { if (connected) setText("game_clock", gameClockText); }, [connected, gameClockText, setText]);
   useEffect(() => { if (connected) setText("shot_clock", shotClockText); }, [connected, setText, shotClockText]);
-  useEffect(() => { if (connected) { setText("fouls_A", fouls[0]); setText("fouls_B", fouls[1]); } }, [connected, fouls, setText]);
+  useEffect(() => {
+    if (!connected) return;
+    setText("fouls_A", fouls[0]);
+    setText("fouls_B", fouls[1]);
+    FOUL_MARKERS.forEach((marker) => {
+      setVisible(`fouls_A_${marker}`, fouls[0] >= marker);
+      setVisible(`fouls_B_${marker}`, fouls[1] >= marker);
+    });
+  }, [connected, fouls, setText, setVisible]);
   useEffect(() => { if (connected) { setText("timeouts_A", timeouts[0]); setText("timeouts_B", timeouts[1]); } }, [connected, setText, timeouts]);
   useEffect(() => {
     if (!connected) return;
@@ -83,8 +93,8 @@ function BasketballControls(props: ControllerRenderProps) {
     <Panel title="쿼터 · 팀 상태">
       <Segments value={period} items={PERIODS} onChange={setPeriod} label="농구 쿼터" />
       <div className={styles.counterGrid} style={{ marginTop: 8 }}>
-        <MiniCounter label={`${teamA} 파울`} value={fouls[0]} onChange={(value) => setFouls((current) => [value, current[1]])} max={9} />
-        <MiniCounter label={`${teamB} 파울`} value={fouls[1]} onChange={(value) => setFouls((current) => [current[0], value])} max={9} />
+        <MiniCounter label={`${teamA} 파울`} value={fouls[0]} onChange={(value) => setFouls((current) => [value, current[1]])} max={MAX_TEAM_FOULS} />
+        <MiniCounter label={`${teamB} 파울`} value={fouls[1]} onChange={(value) => setFouls((current) => [current[0], value])} max={MAX_TEAM_FOULS} />
         <MiniCounter label={`${teamA} 타임아웃`} value={timeouts[0]} onChange={(value) => setTimeouts((current) => [value, current[1]])} max={7} />
         <MiniCounter label={`${teamB} 타임아웃`} value={timeouts[1]} onChange={(value) => setTimeouts((current) => [current[0], value])} max={7} />
       </div>
