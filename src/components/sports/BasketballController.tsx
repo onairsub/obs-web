@@ -1,6 +1,7 @@
 "use client";
 
 import { formatClock, formatShotClock, usePersistentClock } from "@/components/obs/usePersistentClock";
+import { useBasketballFoulSync } from "@/components/obs/useBasketballFoulSync";
 import { useEffect } from "react";
 import { useLocalStorage } from "usehooks-ts";
 import { ClockPanel, KeyHint, MiniCounter, Panel, Scoreboard, Segments } from "./ControlPrimitives";
@@ -12,7 +13,6 @@ import styles from "./SportController.module.css";
 
 const PERIODS = ["Q1", "Q2", "Q3", "Q4", "OT", "FT"] as const;
 const MAX_TEAM_FOULS = 9;
-const FOUL_MARKERS = Array.from({ length: MAX_TEAM_FOULS }, (_, index) => index + 1);
 const keyFor = (action: ShortcutAction) => shortcutKey("basketball", action);
 
 function BasketballControls(props: ControllerRenderProps) {
@@ -20,6 +20,7 @@ function BasketballControls(props: ControllerRenderProps) {
   const [scores, setScores] = useLocalStorage<[number, number]>("OBS_BASKETBALL_SCORE", [0, 0]);
   const [period, setPeriod] = useLocalStorage("OBS_BASKETBALL_PERIOD", "Q1");
   const [fouls, setFouls] = useLocalStorage<[number, number]>("OBS_BASKETBALL_FOULS", [0, 0]);
+  const foulSyncError = useBasketballFoulSync(fouls);
   const [timeouts, setTimeouts] = useLocalStorage<[number, number]>("OBS_BASKETBALL_TIMEOUTS", [0, 0]);
   const [possession, setPossession] = useLocalStorage<"A" | "B" | "none">("OBS_BASKETBALL_POSSESSION", "none");
   const [settings] = useLocalStorage<BasketballSettings>("OBS_BASKETBALL_CONFIG", DEFAULT_BASKETBALL_SETTINGS);
@@ -32,15 +33,6 @@ function BasketballControls(props: ControllerRenderProps) {
   useEffect(() => { if (connected) setText("period", period); }, [connected, period, setText]);
   useEffect(() => { if (connected) setText("game_clock", gameClockText); }, [connected, gameClockText, setText]);
   useEffect(() => { if (connected) setText("shot_clock", shotClockText); }, [connected, setText, shotClockText]);
-  useEffect(() => {
-    if (!connected) return;
-    setText("fouls_A", fouls[0]);
-    setText("fouls_B", fouls[1]);
-    FOUL_MARKERS.forEach((marker) => {
-      setVisible(`fouls_A_${marker}`, fouls[0] >= marker);
-      setVisible(`fouls_B_${marker}`, fouls[1] >= marker);
-    });
-  }, [connected, fouls, setText, setVisible]);
   useEffect(() => { if (connected) { setText("timeouts_A", timeouts[0]); setText("timeouts_B", timeouts[1]); } }, [connected, setText, timeouts]);
   useEffect(() => {
     if (!connected) return;
@@ -50,6 +42,12 @@ function BasketballControls(props: ControllerRenderProps) {
 
   const startAll = () => { gameClock.start(); shotClock.start(); };
   const pauseAll = () => { gameClock.pause(); shotClock.pause(); };
+  const changePeriod = (next: string) => {
+    if (next === period) return;
+    setPeriod(next);
+    setFouls([0, 0]);
+    setTimeouts([0, 0]);
+  };
   const anyClockRunning = gameClock.running || shotClock.running;
   const changeFoul = (index: 0 | 1, delta: number) => setFouls((current) => {
     const next: [number, number] = [...current];
@@ -93,6 +91,7 @@ function BasketballControls(props: ControllerRenderProps) {
       value={gameClockText}
       running={gameClock.running}
       ready={gameClock.ready}
+      manualEdit={{ apply: (seconds) => gameClock.reset(seconds, true) }}
       shortcuts={{ toggle: keyFor("clock-toggle"), reset: keyFor("clock-reset"), minus: keyFor("clock-minus"), plus: keyFor("clock-plus") }}
       onStart={gameClock.start}
       onPause={gameClock.pause}
@@ -108,6 +107,7 @@ function BasketballControls(props: ControllerRenderProps) {
       value={shotClockText}
       running={shotClock.running}
       ready={shotClock.ready}
+      manualEdit={{ secondsOnly: true, apply: (seconds) => shotClock.reset(seconds, true) }}
       shortcuts={{ toggle: keyFor("shot-toggle"), reset: keyFor("shot-reset"), minus: keyFor("shot-minus"), plus: keyFor("shot-plus") }}
       onStart={shotClock.start}
       onPause={shotClock.pause}
@@ -119,7 +119,7 @@ function BasketballControls(props: ControllerRenderProps) {
       adjust={{ label: "1초", minus: () => shotClock.adjust(-1, true), plus: () => shotClock.adjust(1, true) }}
     />
     <Panel title="쿼터 · 팀 상태">
-      <Segments value={period} items={PERIODS} onChange={setPeriod} label="농구 쿼터" />
+      <Segments value={period} items={PERIODS} onChange={changePeriod} label="농구 쿼터" />
       <div className={styles.counterGrid} style={{ marginTop: 8 }}>
         <MiniCounter label={`${teamA} 파울`} value={fouls[0]} onChange={(value) => setFouls((current) => [value, current[1]])} max={MAX_TEAM_FOULS} shortcuts={{ minus: keyFor("foul-a-minus"), plus: keyFor("foul-a-plus") }} />
         <MiniCounter label={`${teamB} 파울`} value={fouls[1]} onChange={(value) => setFouls((current) => [current[0], value])} max={MAX_TEAM_FOULS} shortcuts={{ minus: keyFor("foul-b-minus"), plus: keyFor("foul-b-plus") }} />
@@ -131,6 +131,7 @@ function BasketballControls(props: ControllerRenderProps) {
         <button className={possession === "none" ? styles.toggleActive : ""} onClick={() => setPossession("none")}>공격권 끔</button>
         <button className={possession === "B" ? styles.toggleActive : ""} onClick={() => setPossession("B")}>B 공격권</button>
       </div>
+      {foulSyncError && <p className={styles.helper} role="alert">{foulSyncError}</p>}
     </Panel>
   </>;
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { Dispatch, ReactNode, SetStateAction, useState } from "react";
+import { Dispatch, ReactNode, SetStateAction, useRef, useState } from "react";
 import { shortcutKey, type ShortcutAction } from "./sportShortcuts";
 import type { SportKey } from "./sportSettings";
+import { ClockTimeEditor } from "./ClockTimeEditor";
 import styles from "./SportController.module.css";
 
 export function Panel({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
@@ -81,7 +82,7 @@ export function MiniCounter({ label, value, onChange, max = 99, shortcuts }: { l
   return <div className={styles.miniCounter}><span>{label}</span><div><button onClick={() => onChange(Math.max(0, value - 1))} aria-keyshortcuts={shortcuts?.minus}>−<KeyHint>{shortcuts?.minus}</KeyHint></button><strong>{value}</strong><button onClick={() => onChange(Math.min(max, value + 1))} aria-keyshortcuts={shortcuts?.plus}>+<KeyHint>{shortcuts?.plus}</KeyHint></button></div></div>;
 }
 
-export function ClockPanel({ title, value, running, ready = true, onStart, onPause, onReset, presets, adjust, shortcuts }: {
+export function ClockPanel({ title, value, running, ready = true, onStart, onPause, onReset, presets, adjust, shortcuts, manualEdit }: {
   title: string;
   value: string;
   running: boolean;
@@ -92,9 +93,28 @@ export function ClockPanel({ title, value, running, ready = true, onStart, onPau
   presets?: { label: string; action: () => void; shortcut?: string }[];
   adjust?: { minus: () => void; plus: () => void; label: string };
   shortcuts?: { toggle?: string; reset?: string; minus?: string; plus?: string };
+  manualEdit?: { secondsOnly?: boolean; apply: (seconds: number) => void };
 }) {
+  const [editing, setEditing] = useState(false);
+  const lastTap = useRef<number | null>(null);
+  const openEditor = () => { if (ready && manualEdit) { lastTap.current = null; setEditing(true); } };
   return <Panel title={title} aside={<span className={`${styles.clockState} ${ready && running ? styles.running : ""}`}>{!ready ? "동기화 중" : running ? "RUN" : "HOLD"}</span>}>
-    <div className={styles.clockValue}>{ready ? value : "—"}</div>
+    {editing && manualEdit ? <ClockTimeEditor title={title} value={value} secondsOnly={manualEdit.secondsOnly} ready={ready} onApply={manualEdit.apply} onCancel={() => setEditing(false)} />
+      : manualEdit ? <div className={styles.editableClock}>
+        <button type="button" className={`${styles.clockValue} ${styles.clockEditTrigger}`} disabled={!ready}
+          aria-label={`${title} 시간 수정`} title="더블클릭 또는 두 번 탭하여 시간 수정" data-shortcuts-ignore
+          onDoubleClick={openEditor}
+          onClick={(event) => { if (event.detail === 0) openEditor(); }}
+          onPointerUp={(event) => {
+            if (event.pointerType !== "touch" || !event.isPrimary) return;
+            const now = event.timeStamp;
+            if (lastTap.current !== null && now - lastTap.current < 350) openEditor();
+            else lastTap.current = now;
+          }}>
+          {ready ? value : "—"}
+        </button>
+        <span className={styles.clockEditHint}>숫자를 더블클릭 · 두 번 탭하여 수정</span>
+      </div> : <div className={styles.clockValue}>{ready ? value : "—"}</div>}
     <div className={styles.buttonRow}>
       <button disabled={!ready} className={styles.primaryAction} onClick={running ? onPause : onStart} aria-keyshortcuts={shortcuts?.toggle}>{running ? "일시정지" : "시작"}<KeyHint>{shortcuts?.toggle}</KeyHint></button>
       <button disabled={!ready} onClick={onReset} aria-keyshortcuts={shortcuts?.reset}>리셋<KeyHint>{shortcuts?.reset}</KeyHint></button>

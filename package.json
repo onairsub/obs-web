@@ -10,6 +10,7 @@
     "test:connection": "tsx --test scripts/remote-connection.test.ts scripts/remote-renewal.test.ts",
     "test:clocks": "tsx --test scripts/clock-sync.test.ts scripts/clock-relay.test.ts",
     "test:shortcuts": "node --import tsx --test scripts/shortcuts.test.ts",
+    "test:basketball": "node --import tsx --test scripts/basketball-fouls.test.ts scripts/clock-input.test.ts",
     "lint": "eslint ."
   },
   "dependencies": {
