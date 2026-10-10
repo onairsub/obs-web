@@ -6,6 +6,8 @@ import { useLocalStorage } from "usehooks-ts";
 import { ClockPanel, MiniCounter, Panel, Scoreboard, Segments } from "./ControlPrimitives";
 import { ControllerRenderProps, ControllerShell } from "./ControllerShell";
 import { BasketballSettings, DEFAULT_BASKETBALL_SETTINGS } from "./sportSettings";
+import { ControllerShortcuts } from "./ControllerShortcuts";
+import { scoreShortcutHandlers } from "./sportShortcuts";
 import styles from "./SportController.module.css";
 
 const PERIODS = ["Q1", "Q2", "Q3", "Q4", "OT", "FT"] as const;
@@ -47,6 +49,11 @@ function BasketballControls(props: ControllerRenderProps) {
 
   const startAll = () => { gameClock.start(); shotClock.start(); };
   const pauseAll = () => { gameClock.pause(); shotClock.pause(); };
+  const changeFoul = (index: 0 | 1, delta: number) => setFouls((current) => {
+    const next: [number, number] = [...current];
+    next[index] = Math.max(0, Math.min(MAX_TEAM_FOULS, next[index] + delta));
+    return next;
+  });
   const swap = () => {
     setScores(([a, b]) => [b, a]);
     setFouls(([a, b]) => [b, a]);
@@ -56,6 +63,21 @@ function BasketballControls(props: ControllerRenderProps) {
   };
 
   return <>
+    <ControllerShortcuts sport="basketball" handlers={{
+      ...scoreShortcutHandlers(setScores),
+      "clocks-toggle": { enabled: gameClock.ready && shotClock.ready, run: () => gameClock.running || shotClock.running ? pauseAll() : startAll() },
+      "clock-toggle": { enabled: gameClock.ready, run: () => gameClock.running ? gameClock.pause() : gameClock.start() },
+      "clock-minus": { enabled: gameClock.ready, run: () => gameClock.adjust(-1, true) },
+      "clock-plus": { enabled: gameClock.ready, run: () => gameClock.adjust(1, true) },
+      "clock-reset": { enabled: gameClock.ready, run: () => gameClock.reset(settings.quarterMinutes * 60, true) },
+      "shot-toggle": { enabled: shotClock.ready, run: () => shotClock.running ? shotClock.pause() : shotClock.start() },
+      "shot-minus": { enabled: shotClock.ready, run: () => shotClock.adjust(-1, true) },
+      "shot-plus": { enabled: shotClock.ready, run: () => shotClock.adjust(1, true) },
+      "shot-reset": { enabled: shotClock.ready, run: () => shotClock.reset(settings.shotClockSeconds, true) },
+      "shot-short": { enabled: shotClock.ready, run: () => shotClock.reset(settings.shortShotClockSeconds, true) },
+      "foul-a-minus": { run: () => changeFoul(0, -1) }, "foul-a-plus": { run: () => changeFoul(0, 1) },
+      "foul-b-minus": { run: () => changeFoul(1, -1) }, "foul-b-plus": { run: () => changeFoul(1, 1) },
+    }} />
     <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} increments={[1, 2, 3]} onSwap={swap} />
     <Panel title="동시 타이머">
       <div className={styles.actionGrid}>

@@ -73,6 +73,20 @@
 .teamFields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 .controls { display: grid; gap: 8px; }
+.shortcuts { border: 1px solid #e0e0e0; border-radius: 4px; background: #fff; }
+.shortcuts summary { padding: 10px 12px; color: #666; font-size: 12px; cursor: pointer; list-style-position: inside; }
+.shortcuts summary > span { float: right; color: var(--primary); font-size: 10px; font-weight: 600; }
+.shortcutBody { padding: 0 12px 12px; }
+.shortcutSwitch { display: flex; align-items: center; gap: 7px; padding: 4px 0 10px; color: #555; font-size: 11px; cursor: pointer; }
+.shortcutSwitch input { accent-color: var(--primary); }
+.shortcutGuide { color: #555; font-size: 11px; }
+.shortcutGuide section + section { margin-top: 12px; }
+.shortcutGuide h3 { margin: 0 0 6px; color: #444; font-size: 11px; font-weight: 600; }
+.shortcutGuide dl { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 10px; margin: 0; }
+.shortcutGuide dl > div { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.shortcutGuide dd { margin: 0; font-size: 10px; }
+.shortcutGuide kbd { display: inline-block; min-width: 23px; padding: 2px 5px; border: 1px solid #ddd; border-bottom-width: 2px; border-radius: 3px; background: #fafafa; font-family: inherit; font-size: 11px; text-align: center; }
+.shortcutGuide p { margin: 12px 0 0; color: #777; font-size: 10px; line-height: 1.6; }
 .panel { overflow: hidden; padding: 14px; border: 1px solid #e0e0e0; border-radius: 4px; background: #fff; }
 .panel > header { display: flex; align-items: center; justify-content: space-between; min-height: 20px; margin-bottom: 10px; }
 .panel h2 { margin: 0; color: #444; font-size: 12px; font-weight: 700; }

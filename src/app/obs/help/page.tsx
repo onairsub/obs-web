@@ -2,6 +2,7 @@
 
 import { COMMON_OBS_SOURCES, OBSSource, SPORT_HELP } from "@/components/sports/sportHelp";
 import { SPORT_OPTIONS, SportKey } from "@/components/sports/sportSettings";
+import { ShortcutGuide } from "@/components/sports/ControllerShortcuts";
 import Link from "next/link";
 import { useLocalStorage } from "usehooks-ts";
 import styles from "./page.module.css";
@@ -44,6 +45,12 @@ export default function HelpPage() {
 
       <SourceSection title="공통 소스" description="모든 종목에서 사용합니다." sources={COMMON_OBS_SOURCES} />
       <SourceSection title={`${help.label} 전용 소스`} description="사용할 기능에 해당하는 소스만 만들어도 됩니다." sources={help.sources} />
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}><h2>키보드 단축키</h2></div>
+        <p className={styles.notes}>컨트롤러의 키보드 단축키 메뉴에서 켜고 끌 수 있습니다. 조합키 없이, 같은 메뉴는 서로 붙어 있는 키로 조작합니다.</p>
+        <ShortcutGuide sport={sport} />
+      </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}><h2>운영 참고</h2></div>

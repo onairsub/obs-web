@@ -4,6 +4,8 @@ import { useEffect, useMemo } from "react";
 import { useLocalStorage } from "usehooks-ts";
 import { MiniCounter, Panel, Scoreboard } from "./ControlPrimitives";
 import { ControllerRenderProps, ControllerShell } from "./ControllerShell";
+import { ControllerShortcuts } from "./ControllerShortcuts";
+import { scoreShortcutHandlers } from "./sportShortcuts";
 import styles from "./SportController.module.css";
 
 function VolleyballControls(props: ControllerRenderProps) {
@@ -72,6 +74,13 @@ function VolleyballControls(props: ControllerRenderProps) {
   };
 
   return <>
+    <ControllerShortcuts sport="volleyball" handlers={{
+      ...scoreShortcutHandlers(setScores),
+      "serve-a": { run: () => setServe("A") }, "serve-off": { run: () => setServe("none") }, "serve-b": { run: () => setServe("B") },
+      "timeout-a": { run: () => setTimeoutSide((current) => current === "A" ? "none" : "A") },
+      "timeout-off": { run: () => setTimeoutSide("none") },
+      "timeout-b": { run: () => setTimeoutSide((current) => current === "B" ? "none" : "B") },
+    }} />
     <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} />
     <Panel title="세트">
       <div className={styles.labelValue}><span>현재 목표 {target}점 · 2점 차 승리</span><strong>{setWins[0]} : {setWins[1]}</strong></div>

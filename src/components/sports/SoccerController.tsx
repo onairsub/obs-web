@@ -6,6 +6,8 @@ import { useLocalStorage } from "usehooks-ts";
 import { ClockPanel, MiniCounter, Panel, Scoreboard, Segments } from "./ControlPrimitives";
 import { ControllerRenderProps, ControllerShell } from "./ControllerShell";
 import { DEFAULT_SOCCER_SETTINGS, SoccerSettings } from "./sportSettings";
+import { ControllerShortcuts } from "./ControllerShortcuts";
+import { scoreShortcutHandlers } from "./sportShortcuts";
 import styles from "./SportController.module.css";
 
 const PERIODS = ["전반", "HT", "후반", "연장1", "연장2", "PK", "FT"] as const;
@@ -40,6 +42,15 @@ function SoccerControls(props: ControllerRenderProps) {
   };
 
   return <>
+    <ControllerShortcuts sport="soccer" handlers={{
+      ...scoreShortcutHandlers(setScores),
+      "clock-toggle": { enabled: clock.ready, run: () => clock.running ? clock.pause() : clock.start() },
+      "clock-minus": { enabled: clock.ready, run: () => clock.adjust(-60) },
+      "clock-plus": { enabled: clock.ready, run: () => clock.adjust(60) },
+      "clock-reset": { enabled: clock.ready, run: () => clock.reset(0) },
+      "added-minus": { run: () => setAddedTime((value) => Math.max(0, value - 1)) },
+      "added-plus": { run: () => setAddedTime((value) => Math.min(30, value + 1)) },
+    }} />
     <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} />
     <ClockPanel
       title="경기 시계"

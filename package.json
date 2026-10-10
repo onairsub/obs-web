@@ -8,6 +8,7 @@
     "start": "NODE_ENV=production tsx server.ts",
     "test:remote": "node scripts/remote-smoke.mjs",
     "test:clocks": "tsx --test scripts/clock-sync.test.ts scripts/clock-relay.test.ts",
+    "test:shortcuts": "node --import tsx --test scripts/shortcuts.test.ts",
     "lint": "eslint ."
   },
   "dependencies": {

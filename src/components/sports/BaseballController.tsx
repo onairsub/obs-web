@@ -5,6 +5,8 @@ import { useLocalStorage } from "usehooks-ts";
 import { Panel, Scoreboard } from "./ControlPrimitives";
 import { ControllerRenderProps, ControllerShell } from "./ControllerShell";
 import { BaseballSettings, DEFAULT_BASEBALL_SETTINGS } from "./sportSettings";
+import { ControllerShortcuts } from "./ControllerShortcuts";
+import { scoreShortcutHandlers } from "./sportShortcuts";
 import styles from "./SportController.module.css";
 
 function BaseballControls(props: ControllerRenderProps) {
@@ -40,6 +42,7 @@ function BaseballControls(props: ControllerRenderProps) {
   };
   const addBall = () => count[0] >= 3 ? clearPlate() : setCount((current) => [current[0] + 1, current[1], current[2]]);
   const addStrike = () => count[1] >= 2 ? recordOut() : setCount((current) => [current[0], current[1] + 1, current[2]]);
+  const toggleBase = (index: number) => setBases((current) => current.map((value, baseIndex) => baseIndex === index ? !value : value) as [boolean, boolean, boolean]);
 
   const swap = () => {
     setScores(([a, b]) => [b, a]);
@@ -56,6 +59,11 @@ function BaseballControls(props: ControllerRenderProps) {
   </div>;
 
   return <>
+    <ControllerShortcuts sport="baseball" handlers={{
+      ...scoreShortcutHandlers(setScores),
+      "ball": { run: addBall }, "strike": { run: addStrike }, "out": { run: recordOut }, "plate-clear": { run: clearPlate },
+      "base-1": { run: () => toggleBase(0) }, "base-2": { run: () => toggleBase(1) }, "base-3": { run: () => toggleBase(2) },
+    }} />
     <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} />
     <Panel title="이닝">
       <div className={styles.labelValue}><span>정규 {settings.regulationInnings}회 · {half === "TOP" ? "초 · AWAY 공격" : "말 · HOME 공격"}</span><strong>{inning}회 {half === "TOP" ? "초" : "말"}</strong></div>
@@ -75,7 +83,7 @@ function BaseballControls(props: ControllerRenderProps) {
     </Panel>
     <Panel title="주자">
       <div className={`${styles.actionGrid} ${styles.three}`}>
-        {bases.map((occupied, index) => <button key={index} className={occupied ? styles.toggleActive : ""} onClick={() => setBases((current) => current.map((value, baseIndex) => baseIndex === index ? !value : value) as [boolean, boolean, boolean])}>{index + 1}루</button>)}
+        {bases.map((occupied, index) => <button key={index} className={occupied ? styles.toggleActive : ""} onClick={() => toggleBase(index)}>{index + 1}루</button>)}
       </div>
     </Panel>
     <Panel title="안타 · 실책">
