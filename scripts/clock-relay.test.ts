@@ -5,7 +5,7 @@ import { once } from "node:events";
 import { test } from "node:test";
 import WebSocket from "ws";
 import { HostClocks, RemoteClocks } from "../src/components/obs/clockSync";
-import type { RemoteClientMessage, RemoteServerMessage } from "../src/components/remote/remoteProtocol";
+import { REMOTE_PROTOCOL_VERSION, type RemoteClientMessage, type RemoteServerMessage } from "../src/components/remote/remoteProtocol";
 
 test("three live remote sockets converge, reconnect to current host time, and cannot overwrite timers", { timeout: 20000 }, async (t) => {
   async function startServer() {
@@ -38,7 +38,7 @@ test("three live remote sockets converge, reconnect to current host time, and ca
     sockets.push(socket);
     await once(socket, "open");
     const ready = waitFor(socket, (m) => m.type === "ready");
-    send(socket, { type: "join", role, sessionId, hostSecret: role === "host" ? hostSecret : undefined, clientId: randomUUID(), protocolVersion: 2 });
+    send(socket, { type: "join", role, sessionId, hostSecret: role === "host" ? hostSecret : undefined, clientId: randomUUID(), protocolVersion: REMOTE_PROTOCOL_VERSION });
     await ready;
     return socket;
   }

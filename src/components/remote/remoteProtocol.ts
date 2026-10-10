@@ -1,6 +1,6 @@
 import { isClockCommand, isClockSnapshot, type ClockCommand, type ClockSnapshot } from "../obs/clockSync";
 
-export const REMOTE_PROTOCOL_VERSION = 2;
+export const REMOTE_PROTOCOL_VERSION = 3;
 
 export const REMOTE_SYNC_KEYS = [
   "OBS_ACTIVE_SPORT",
@@ -54,7 +54,7 @@ export type RemoteOBSState = {
 };
 
 export type RemoteClientMessage =
-  | { type: "join"; sessionId: string; clientId: string; role: "host" | "remote"; hostSecret?: string; protocolVersion?: number }
+  | { type: "join"; sessionId: string; clientId: string; role: "host" | "remote"; hostSecret?: string; protocolVersion?: number; resume?: boolean }
   | { type: "clock-sync"; requestId: string }
   | { type: "clock-command"; command: ClockCommand }
   | { type: "clock-state"; snapshot: ClockSnapshot; replyTo?: string }
@@ -63,9 +63,9 @@ export type RemoteClientMessage =
   | { type: "command"; command: RemoteCommand }
   | { type: "obs-state"; state: RemoteOBSState }
   | { type: "close-session" }
-  | { type: "ping" };
+  | { type: "ping"; requestId?: string };
 
-export type RemoteServerMessage =
+export type RemoteServerMessage = (
   | { type: "ready"; role: "host" | "remote"; uploadState?: boolean }
   | { type: "clock-sync"; requestId: string }
   | { type: "clock-command"; command: ClockCommand }
@@ -77,7 +77,8 @@ export type RemoteServerMessage =
   | { type: "client-count"; count: number }
   | { type: "closed"; reason: string }
   | { type: "error"; code: string; message: string }
-  | { type: "pong" };
+  | { type: "pong"; requestId?: string }
+) & { relayId?: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -107,7 +108,8 @@ export function parseRemoteClientMessage(raw: unknown): RemoteClientMessage | nu
     const validClient = typeof value.clientId === "string" && value.clientId.length >= 8 && value.clientId.length <= 64;
     const validRole = value.role === "host" || value.role === "remote";
     const validSecret = value.role !== "host" || (typeof value.hostSecret === "string" && /^[a-f0-9]{48}$/.test(value.hostSecret));
-    return validSession && validClient && validRole && validSecret ? value as RemoteClientMessage : null;
+    const validResume = value.resume === undefined || typeof value.resume === "boolean";
+    return validSession && validClient && validRole && validSecret && validResume ? value as RemoteClientMessage : null;
   }
   if (value.type === "storage") {
     const validValue = value.value === null || (typeof value.value === "string" && value.value.length <= 20_000);
@@ -119,7 +121,8 @@ export function parseRemoteClientMessage(raw: unknown): RemoteClientMessage | nu
   if (value.type === "snapshot") return isRecord(value.state) ? value as RemoteClientMessage : null;
   if (value.type === "command") return isRemoteCommand(value.command) ? value as RemoteClientMessage : null;
   if (value.type === "obs-state") return isRecord(value.state) && Array.isArray(value.state.scenes) && typeof value.state.currentScene === "string" ? value as RemoteClientMessage : null;
-  if (value.type === "close-session" || value.type === "ping") return value as RemoteClientMessage;
+  if (value.type === "ping") return value.requestId === undefined || (typeof value.requestId === "string" && value.requestId.length <= 64) ? value as RemoteClientMessage : null;
+  if (value.type === "close-session") return value as RemoteClientMessage;
   return null;
 }
 

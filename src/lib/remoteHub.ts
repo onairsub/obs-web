@@ -35,6 +35,7 @@ type MessageRelayEvent = {
   sessionId: string;
   audience: ConnectionRole | "all";
   excludeConnectionId?: string;
+  excludeClient?: { clientId: string; role: ConnectionRole };
   message: RemoteServerMessage;
 };
 type PresenceRelayEvent = {
@@ -106,6 +107,7 @@ function deliver(event: MessageRelayEvent) {
   for (const [socket, connection] of hub.connections) {
     if (!connection.role || connection.sessionId !== event.sessionId) continue;
     if (event.excludeConnectionId === connection.connectionId) continue;
+    if (event.excludeClient && event.excludeClient.clientId === connection.clientId && event.excludeClient.role === connection.role) continue;
     if (event.audience !== "all" && event.audience !== connection.role) continue;
     send(socket, event.message);
   }
@@ -152,6 +154,9 @@ function applyRelayEvent(event: RelayEvent) {
 }
 
 async function publish(event: RelayEvent) {
+  // The same event can arrive through the retiring and replacement sockets,
+  // including sockets on different Vercel instances. Give it one stable ID.
+  if (event.kind === "message") event = { ...event, message: { ...event.message, relayId: randomUUID() } };
   applyRelayEvent(event);
   if (!redis) return;
   try {
@@ -231,11 +236,12 @@ function stopBackgroundWork() {
   }
 }
 
-async function claimHost(sessionId: string, hostSecret: string) {
+async function claimHost(sessionId: string, hostSecret: string, resume = false) {
   const hash = secretHash(hostSecret);
   if (!redis) {
     const existing = hub.localSessions.get(sessionId);
     if (existing) return { ok: existing.secretHash === hash, created: false };
+    if (resume) return { ok: false, created: false, missing: true };
     hub.localSessions.set(sessionId, { secretHash: hash, state: {}, obsState: null });
     return { ok: true, created: true };
   }
@@ -246,6 +252,8 @@ async function claimHost(sessionId: string, hostSecret: string) {
     if (existing === hash) await redis.expire(key, SESSION_TTL_SECONDS);
     return { ok: existing === hash, created: false };
   }
+  // A delayed warm join must not recreate a session after the user closes it.
+  if (resume) return { ok: false, created: false, missing: true };
   const result = await redis.set(key, hash, "EX", SESSION_TTL_SECONDS, "NX");
   if (result === "OK") return { ok: true, created: true };
   return { ok: (await redis.get(key)) === hash, created: false };
@@ -348,7 +356,7 @@ async function closeSession(sessionId: string, excludeConnectionId?: string) {
 async function handleJoin(socket: WebSocket, connection: Connection, message: Extract<RemoteClientMessage, { type: "join" }>) {
   if (connection.role) return;
   if (message.protocolVersion !== REMOTE_PROTOCOL_VERSION) {
-    send(socket, { type: "error", code: "UPDATE_REQUIRED", message: "타이머 동기화가 업데이트되었습니다. 호스트와 모바일 페이지를 모두 새로고침하세요." });
+    send(socket, { type: "error", code: "UPDATE_REQUIRED", message: "원격 연결 방식이 업데이트되었습니다. 호스트와 모바일 페이지를 모두 새로고침하세요." });
     socket.close();
     return;
   }
@@ -359,9 +367,9 @@ async function handleJoin(socket: WebSocket, connection: Connection, message: Ex
   }
 
   if (message.role === "host") {
-    const claim = await claimHost(message.sessionId, message.hostSecret ?? "");
+    const claim = await claimHost(message.sessionId, message.hostSecret ?? "", message.resume);
     if (!claim.ok) {
-      send(socket, { type: "error", code: "HOST_CONFLICT", message: "이미 다른 호스트가 사용 중인 원격 세션입니다." });
+      send(socket, { type: "error", code: claim.missing ? "SESSION_NOT_FOUND" : "HOST_CONFLICT", message: claim.missing ? "종료되었거나 존재하지 않는 원격 세션입니다." : "이미 다른 호스트가 사용 중인 원격 세션입니다." });
       return;
     }
     Object.assign(connection, {
@@ -371,7 +379,7 @@ async function handleJoin(socket: WebSocket, connection: Connection, message: Ex
       lastSessionTouch: Date.now(),
     });
     send(socket, { type: "ready", role: "host", uploadState: claim.created });
-    if (!claim.created) send(socket, { type: "snapshot", state: await loadSnapshot(message.sessionId) });
+    if (!claim.created && !message.resume) send(socket, { type: "snapshot", state: await loadSnapshot(message.sessionId) });
     emitClientCount(message.sessionId, true);
     return;
   }
@@ -388,6 +396,7 @@ async function handleJoin(socket: WebSocket, connection: Connection, message: Ex
   });
   await publishPresence(connection, true);
   send(socket, { type: "ready", role: "remote" });
+  if (message.resume) return;
   send(socket, { type: "snapshot", state: await loadSnapshot(message.sessionId) });
   const obsState = await loadOBSState(message.sessionId);
   if (obsState) send(socket, { type: "obs-state", state: obsState });
@@ -418,7 +427,7 @@ async function handleMessage(socket: WebSocket, raw: unknown) {
   if (message.type === "ping") {
     if (connection.role === "remote") await publishPresence(connection, true);
     else await touchHostSession(connection);
-    send(socket, { type: "pong" });
+    send(socket, { type: "pong", ...(message.requestId ? { requestId: message.requestId } : {}) });
     return;
   }
   if (message.type === "storage") {
@@ -428,6 +437,7 @@ async function handleMessage(socket: WebSocket, raw: unknown) {
       sessionId: connection.sessionId,
       audience: "all",
       excludeConnectionId: connection.connectionId,
+      excludeClient: { clientId: connection.clientId, role: connection.role },
       message: { type: "storage", key: message.key, value: message.value },
     });
     return;

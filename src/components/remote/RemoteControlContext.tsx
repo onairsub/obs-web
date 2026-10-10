@@ -4,6 +4,7 @@ import { DEFAULT_BASKETBALL_SETTINGS, isSportKey } from "@/components/sports/spo
 import { HostClocks, RemoteClocks, isClockSnapshot, type ClockKey, type ClockOperation, type ClockSnapshot } from "../obs/clockSync";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { RemoteRelayConnection } from "./RemoteRelayConnection";
 import {
   REMOTE_SYNC_KEYS,
   REMOTE_SYNC_KEY_SET,
@@ -98,15 +99,15 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const routeSessionId = getRemoteSessionId(pathname);
   const role = routeSessionId ? "remote" : "host";
-  const socketRef = useRef<WebSocket | null>(null);
+  const relayRef = useRef<RemoteRelayConnection | null>(null);
   const sessionIdRef = useRef("");
   const hostSecretRef = useRef("");
   const applyingRemoteState = useRef(false);
-  const manuallyClosed = useRef(false);
   const commandListeners = useRef(new Set<(command: RemoteCommand) => void>());
   const hostClocks = useRef<HostClocks | null>(null);
   const remoteClocks = useRef<RemoteClocks | null>(null);
   const relayReady = useRef(false);
+  const clocksSynchronized = useRef(false);
   const [clockState, setClockState] = useState<ClockSnapshot | null>(null);
   const [status, setStatus] = useState<RemoteStatus>(routeSessionId ? "connecting" : "idle");
   const [sessionId, setSessionId] = useState("");
@@ -166,12 +167,11 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
   }, [applyStorage]);
 
   const send = useCallback((message: RemoteClientMessage) => {
-    const socket = socketRef.current;
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+    relayRef.current?.send(message);
   }, []);
 
   const clockNow = useCallback(() => role === "host" ? hostClocks.current?.now() ?? 0 : remoteClocks.current?.now() ?? 0, [role]);
-  const clockReady = useCallback(() => role === "host" ? Boolean(hostClocks.current) : relayReady.current && Boolean(remoteClocks.current?.ready()), [role]);
+  const clockReady = useCallback(() => role === "host" ? Boolean(hostClocks.current) : relayReady.current && clocksSynchronized.current && Boolean(remoteClocks.current?.ready()), [role]);
   const controlClock = useCallback((key: ClockKey, operation: ClockOperation) => {
     if (role === "host") {
       if (!hostClocks.current) return;
@@ -209,77 +209,74 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!connectionSessionId || (role === "host" && !connectionSecret)) return;
     let cancelled = false;
-    let terminal = false;
-    let reconnectDelay = 1_000;
-    let reconnectTimer: number | null = null;
-    let pingTimer: number | null = null;
     let clockTimer: number | null = null;
-    let joinTimer: number | null = null;
+    let unansweredProbes = 0;
+    const probes = new Set<string>();
+    if (role === "remote") {
+      remoteClocks.current = new RemoteClocks(() => performance.now());
+      clocksSynchronized.current = false;
+      setClockState(null);
+    }
 
     const syncClocks = () => {
-      if (role !== "remote" || !relayReady.current || socketRef.current?.readyState !== WebSocket.OPEN) return;
+      if (clockTimer !== null) clearTimeout(clockTimer);
+      if (cancelled || role !== "remote" || !relayReady.current) return;
       const requestId = crypto.randomUUID();
+      probes.add(requestId);
+      if (probes.size > 32) probes.delete(probes.values().next().value!);
       remoteClocks.current?.probe(requestId);
       send({ type: "clock-sync", requestId });
+      // If the host is also reconnecting, retry promptly instead of waiting
+      // ten seconds for the next normal clock probe.
+      const delay = Math.min(500 * 2 ** Math.min(4, Math.floor(unansweredProbes++ / 4)), 5_000);
+      clockTimer = window.setTimeout(syncClocks, delay);
     };
-    const onVisible = () => { if (document.visibilityState === "visible") syncClocks(); };
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      relayRef.current?.wake();
+      unansweredProbes = 0;
+      syncClocks();
+    };
     document.addEventListener("visibilitychange", onVisible);
 
-    const connect = () => {
-      if (cancelled || terminal) return;
-      relayReady.current = false;
-      if (role === "remote") {
-        remoteClocks.current = new RemoteClocks(() => performance.now());
-        setClockState(null);
-      }
-      setStatus((current) => current === "opening" ? "opening" : "connecting");
-      const socket = new WebSocket(websocketUrl());
-      socketRef.current = socket;
-      const isCurrent = () => !cancelled && !terminal && socketRef.current === socket;
-      joinTimer = window.setTimeout(() => {
-        if (!isCurrent() || relayReady.current) return;
-        setError("원격 서버 응답이 지연되고 있습니다. 다시 연결합니다.");
-        socket.close();
-      }, 10000);
-
-      socket.addEventListener("open", () => {
-        if (!isCurrent()) return;
-        const joinMessage: RemoteClientMessage = {
-          type: "join",
-          sessionId: connectionSessionId,
-          clientId: getClientId(),
-          role,
-          protocolVersion: REMOTE_PROTOCOL_VERSION,
-          ...(role === "host" ? { hostSecret: connectionSecret } : {}),
-        };
-        socket.send(JSON.stringify(joinMessage));
-        pingTimer = window.setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" } satisfies RemoteClientMessage));
-        }, 25_000);
-      });
-
-      socket.addEventListener("message", (event) => {
-        if (!isCurrent()) return;
-        let message: RemoteServerMessage;
-        try {
-          message = JSON.parse(String(event.data));
-        } catch {
-          return;
+    setStatus((current) => current === "opening" ? "opening" : "connecting");
+    const relay = new RemoteRelayConnection({
+      createSocket: () => new WebSocket(websocketUrl()),
+      join: {
+        type: "join", sessionId: connectionSessionId, clientId: getClientId(), role,
+        protocolVersion: REMOTE_PROTOCOL_VERSION,
+        ...(role === "host" ? { hostSecret: connectionSecret } : {}),
+      },
+      onConnected: (connected) => {
+        if (cancelled) return;
+        relayReady.current = connected;
+        if (!connected) {
+          clocksSynchronized.current = false;
+          probes.clear();
+          unansweredProbes = 0;
+          if (clockTimer !== null) clearTimeout(clockTimer);
+          setStatus("connecting");
         }
+      },
+      onUnavailable: () => {
+        if (cancelled) return;
+        setStatus("connecting");
+        setError("원격 중계 연결을 복구하고 있습니다. 잠시 후 자동으로 다시 연결합니다.");
+      },
+      onMessage: (message: RemoteServerMessage) => {
+        if (cancelled) return;
         if (message.type === "ready") {
-          relayReady.current = true;
-          reconnectDelay = 1_000;
-          if (joinTimer) clearTimeout(joinTimer);
           setStatus("active");
           setError("");
           if (role === "host") {
             const url = new URL(`/obs/remote/${connectionSessionId}`, relayOrigin()).toString();
             setRemoteUrl(url);
             window.sessionStorage.setItem(HOST_SESSION_KEY, JSON.stringify({ sessionId: connectionSessionId, hostSecret: connectionSecret }));
-            if (message.uploadState) socket.send(JSON.stringify({ type: "snapshot", state: snapshot() } satisfies RemoteClientMessage));
+            if (message.uploadState) send({ type: "snapshot", state: snapshot() });
+            if (hostClocks.current) send({ type: "clock-state", snapshot: hostClocks.current.snapshot() });
           } else {
+            unansweredProbes = 0;
             syncClocks();
-            clockTimer = window.setInterval(syncClocks, 10000);
           }
           return;
         }
@@ -294,7 +291,16 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
           }
         }
         if (message.type === "clock-state" && role === "remote" && isClockSnapshot(message.snapshot)) {
-          if (remoteClocks.current?.accept(message.snapshot, message.replyTo)) setClockState(message.snapshot);
+          const ownReply = message.replyTo && probes.delete(message.replyTo);
+          if (remoteClocks.current?.accept(message.snapshot, message.replyTo)) {
+            setClockState(message.snapshot);
+            if (ownReply) {
+              clocksSynchronized.current = true;
+              unansweredProbes = 0;
+              if (clockTimer !== null) clearTimeout(clockTimer);
+              clockTimer = window.setTimeout(syncClocks, 10_000);
+            }
+          }
         }
         if (message.type === "storage") applyStorageRef.current(message.key, message.value);
         if (message.type === "snapshot") {
@@ -306,55 +312,32 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
         if (message.type === "obs-state") setOBSState(message.state);
         if (message.type === "client-count") setClientCount(message.count);
         if (message.type === "closed") {
-          terminal = true;
           setStatus("closed");
           setError("호스트가 원격 컨트롤을 닫았습니다.");
           setClientCount(0);
-          socket.close();
         }
         if (message.type === "error") {
           setError(message.message);
           if (message.code === "SESSION_NOT_FOUND" || message.code === "HOST_CONFLICT" || message.code === "UPDATE_REQUIRED") {
-            terminal = true;
             setStatus(message.code === "SESSION_NOT_FOUND" ? "closed" : "error");
             if (role === "host") window.sessionStorage.removeItem(HOST_SESSION_KEY);
-            socket.close();
           } else {
             setStatus("error");
           }
         }
-      });
+      },
+    });
 
-      socket.addEventListener("close", () => {
-        if (socketRef.current !== socket) return;
-        relayReady.current = false;
-        if (pingTimer) clearInterval(pingTimer);
-        if (clockTimer) clearInterval(clockTimer);
-        if (joinTimer) clearTimeout(joinTimer);
-        if (cancelled || terminal || manuallyClosed.current) return;
-        setStatus("connecting");
-        reconnectTimer = window.setTimeout(connect, reconnectDelay);
-        reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
-      });
-
-      socket.addEventListener("error", () => {
-        if (!isCurrent()) return;
-        setError("Vercel 원격 WebSocket에 연결할 수 없습니다. 잠시 후 자동으로 다시 연결합니다.");
-      });
-    };
-
-    manuallyClosed.current = false;
-    connect();
+    relayRef.current = relay;
+    relay.start();
     return () => {
       cancelled = true;
       relayReady.current = false;
+      clocksSynchronized.current = false;
       document.removeEventListener("visibilitychange", onVisible);
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (pingTimer) clearInterval(pingTimer);
-      if (clockTimer) clearInterval(clockTimer);
-      if (joinTimer) clearTimeout(joinTimer);
-      socketRef.current?.close();
-      socketRef.current = null;
+      if (clockTimer !== null) clearTimeout(clockTimer);
+      relay.stop();
+      if (relayRef.current === relay) relayRef.current = null;
     };
   }, [connectionSecret, connectionSessionId, role, send]);
 
@@ -375,7 +358,6 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
   const openSession = useCallback(async () => {
     const nextSessionId = randomHex(16);
     const nextHostSecret = randomHex(24);
-    manuallyClosed.current = false;
     sessionIdRef.current = nextSessionId;
     hostSecretRef.current = nextHostSecret;
     setSessionId(nextSessionId);
@@ -387,10 +369,9 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const closeSession = useCallback(() => {
-    manuallyClosed.current = true;
     send({ type: "close-session" });
-    socketRef.current?.close();
-    socketRef.current = null;
+    relayRef.current?.stop();
+    relayRef.current = null;
     sessionIdRef.current = "";
     hostSecretRef.current = "";
     window.sessionStorage.removeItem(HOST_SESSION_KEY);

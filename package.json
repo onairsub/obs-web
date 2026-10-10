@@ -7,6 +7,7 @@
     "build": "next build --webpack",
     "start": "NODE_ENV=production tsx server.ts",
     "test:remote": "node scripts/remote-smoke.mjs",
+    "test:connection": "tsx --test scripts/remote-connection.test.ts scripts/remote-renewal.test.ts",
     "test:clocks": "tsx --test scripts/clock-sync.test.ts scripts/clock-relay.test.ts",
     "test:shortcuts": "node --import tsx --test scripts/shortcuts.test.ts",
     "lint": "eslint ."
