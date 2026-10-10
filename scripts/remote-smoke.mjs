@@ -46,6 +46,12 @@ try {
   if (!ready.uploadState) throw new Error("New host session was not created");
 
   send(host, { type: "snapshot", state: { OBS_SOCCER_SCORE: "[1,2]", OBS_TEAM_A: null, "OBS-AUTH": "must-not-relay" } });
+  // Separate Vercel instances may process the remote join before the host's
+  // snapshot has reached Redis. Fence that write before asserting bootstrap.
+  const barrierId = randomUUID();
+  const stored = waitFor(host, "snapshot stored", (message) => message.type === "pong" && message.requestId === barrierId);
+  send(host, { type: "ping", requestId: barrierId });
+  await stored;
 
   const remoteReady = waitFor(remote, "remote ready", (message) => message.type === "ready");
   const remoteSnapshot = waitFor(remote, "remote snapshot", (message) => message.type === "snapshot");
