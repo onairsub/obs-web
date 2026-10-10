@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRemoteControl } from "../remote/RemoteControlContext";
-import { clockValue, type ClockDirection, type ClockKey } from "./clockSync";
+import { clockValue, clockRunning, clockKeepsRunningAtZero, type ClockDirection, type ClockKey } from "./clockSync";
 
 export function usePersistentClock(
   storageKey: ClockKey,
@@ -16,8 +16,9 @@ export function usePersistentClock(
   const ready = clockReady();
   // Rendering may interpolate, but it must never publish an expiry or a value
   // calculated with a phone's clock back to the host.
-  const valueMs = clockValue(clock, direction, clockNow());
-  const running = clock.running && (direction === "up" || valueMs > 0);
+  const now = clockNow();
+  const valueMs = clockValue(clock, direction, now);
+  const running = clockRunning(clock, direction, now, clockKeepsRunningAtZero(storageKey));
 
   useEffect(() => {
     if (!clock.running && role !== "remote") return;

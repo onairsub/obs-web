@@ -30,22 +30,32 @@ export function clockDirection(key: ClockKey): ClockDirection {
   return key === "OBS_SOCCER_CLOCK" ? "up" : "down";
 }
 
+// The shot clock stays armed at zero until explicitly paused. Other clocks
+// retain their existing expiry behavior; the value itself is always clamped.
+export function clockKeepsRunningAtZero(key: ClockKey) {
+  return key === "OBS_BASKETBALL_SHOT_CLOCK";
+}
+
 export function clockValue(clock: StoredClock, direction: ClockDirection, now: number) {
   const elapsed = clock.running ? Math.max(0, now - clock.startedAt) : 0;
   return Math.max(0, clock.baseMs + (direction === "down" ? -elapsed : elapsed));
 }
 
-export function changeClock(clock: StoredClock, direction: ClockDirection, operation: ClockOperation, now: number, initialSeconds: number): StoredClock {
+export function clockRunning(clock: StoredClock, direction: ClockDirection, now: number, keepRunningAtZero = false) {
+  return clock.running && (keepRunningAtZero || direction === "up" || clockValue(clock, direction, now) > 0);
+}
+
+export function changeClock(clock: StoredClock, direction: ClockDirection, operation: ClockOperation, now: number, initialSeconds: number, keepRunningAtZero = false): StoredClock {
   const value = clockValue(clock, direction, now);
-  const wasRunning = clock.running && (direction === "up" || value > 0);
+  const wasRunning = clockRunning(clock, direction, now, keepRunningAtZero);
   if (operation.action === "start") {
     if (wasRunning) return clock;
     const baseMs = direction === "down" && value <= 0 ? initialSeconds * 1000 : value;
-    return { running: direction === "up" || baseMs > 0, baseMs, startedAt: now };
+    return { running: keepRunningAtZero || direction === "up" || baseMs > 0, baseMs, startedAt: now };
   }
   if (operation.action === "pause") return { running: false, baseMs: value, startedAt: 0 };
   const baseMs = Math.max(0, (operation.action === "adjust" ? value : 0) + operation.seconds * 1000);
-  const running = operation.keepRunning && wasRunning && (direction === "up" || baseMs > 0);
+  const running = operation.keepRunning && wasRunning && (keepRunningAtZero || direction === "up" || baseMs > 0);
   return { running, baseMs, startedAt: running ? now : 0 };
 }
 
@@ -95,7 +105,7 @@ export class HostClocks {
   apply(key: ClockKey, operation: ClockOperation) {
     // Synchronous read/modify/write: consecutive commands use the latest state,
     // even when React has not rendered yet or several phones send at once.
-    const clock = changeClock(this.clocks[key], clockDirection(key), operation, this.now(), this.initialSeconds(key));
+    const clock = changeClock(this.clocks[key], clockDirection(key), operation, this.now(), this.initialSeconds(key), clockKeepsRunningAtZero(key));
     this.clocks[key] = clock;
     this.revision++;
     this.write(key, clock);

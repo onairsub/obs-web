@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HostClocks, RemoteClocks, clockValue, changeClock, type ClockCommand, type ClockKey } from "../src/components/obs/clockSync";
+import { HostClocks, RemoteClocks, clockValue, clockRunning, clockKeepsRunningAtZero, changeClock, type ClockCommand, type ClockKey } from "../src/components/obs/clockSync";
 import { filterRemoteSnapshot, parseRemoteClientMessage, REMOTE_SYNC_KEYS } from "../src/components/remote/remoteProtocol";
 
 const shot: ClockKey = "OBS_BASKETBALL_SHOT_CLOCK";
@@ -62,8 +62,67 @@ test("phones with different clocks agree after round-trip synchronization and ca
   advance(30000);
   assert.equal(clockValue(host.snapshot().clocks[shot], "down", host.now()), 0);
   assert.equal(stored.get(shot).baseMs, 24000);
+  // Already armed at zero: a repeated start is idempotent, not a hidden reset.
   host.apply(shot, { action: "start" });
+  assert.equal(clockValue(host.snapshot().clocks[shot], "down", host.now()), 0);
+  host.apply(shot, { action: "reset", seconds: 24, keepRunning: true });
   assert.equal(clockValue(host.snapshot().clocks[shot], "down", host.now()), 24000);
+});
+
+test("expired shot clock stays RUN at zero and presets or direct input immediately count down", () => {
+  for (const seconds of [24, 14, 4.9]) {
+    const { host, advance } = fixture();
+    host.apply(shot, { action: "start" });
+    advance(120000);
+    const expired = host.snapshot().clocks[shot];
+    assert.equal(clockValue(expired, "down", host.now()), 0);
+    assert.equal(clockRunning(expired, "down", host.now(), clockKeepsRunningAtZero(shot)), true);
+    const reset = host.apply(shot, { action: "reset", seconds, keepRunning: true });
+    assert.equal(reset.clocks[shot].running, true);
+    advance(500);
+    assert.equal(clockValue(host.snapshot().clocks[shot], "down", host.now()), seconds * 1000 - 500);
+  }
+});
+
+test("shot clock remains armed through manual zero and negative adjustment, never carries negative time", () => {
+  for (const operation of [{ action: "reset", seconds: 0 }, { action: "adjust", seconds: -30 }] as const) {
+    const { host, advance } = fixture();
+    host.apply(shot, { action: "start" });
+    const zero = host.apply(shot, { ...operation, keepRunning: true });
+    assert.equal(zero.clocks[shot].running, true);
+    assert.equal(zero.clocks[shot].baseMs, 0);
+    advance(60000);
+    assert.equal(clockValue(host.snapshot().clocks[shot], "down", host.now()), 0);
+    host.apply(shot, { action: "adjust", seconds: 1, keepRunning: true });
+    advance(100);
+    assert.equal(clockValue(host.snapshot().clocks[shot], "down", host.now()), 900);
+  }
+});
+
+test("explicitly pausing an expired shot clock disarms it; later resets remain paused", () => {
+  const { host, advance } = fixture();
+  host.apply(shot, { action: "start" });
+  advance(30000);
+  host.apply(shot, { action: "pause" });
+  assert.equal(clockRunning(host.snapshot().clocks[shot], "down", host.now(), true), false);
+  host.apply(shot, { action: "reset", seconds: 24, keepRunning: true });
+  advance(1000);
+  assert.equal(clockValue(host.snapshot().clocks[shot], "down", host.now()), 24000);
+  assert.equal(host.snapshot().clocks[shot].running, false);
+  host.apply(shot, { action: "start" });
+  host.apply(shot, { action: "reset", seconds: 0, keepRunning: false });
+  assert.equal(host.snapshot().clocks[shot].running, false);
+});
+
+test("only the shot clock stays armed at expiry; game clock UI and resets still stop", () => {
+  const { host, advance } = fixture();
+  host.apply(game, { action: "start" });
+  advance(601000);
+  assert.equal(clockKeepsRunningAtZero(game), false);
+  assert.equal(clockKeepsRunningAtZero("OBS_SOCCER_CLOCK"), false);
+  assert.equal(clockRunning(host.snapshot().clocks[game], "down", host.now(), clockKeepsRunningAtZero(game)), false);
+  host.apply(game, { action: "reset", seconds: 600, keepRunning: true });
+  assert.equal(host.snapshot().clocks[game].running, false);
 });
 
 test("out-of-order snapshots never undo a reset; clock samples from other phones are ignored", () => {

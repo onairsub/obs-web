@@ -4,7 +4,7 @@ import { fork } from "node:child_process";
 import { once } from "node:events";
 import { test } from "node:test";
 import WebSocket from "ws";
-import { HostClocks, RemoteClocks } from "../src/components/obs/clockSync";
+import { HostClocks, RemoteClocks, clockValue, clockRunning, clockKeepsRunningAtZero } from "../src/components/obs/clockSync";
 import { REMOTE_PROTOCOL_VERSION, type RemoteClientMessage, type RemoteServerMessage } from "../src/components/remote/remoteProtocol";
 
 test("three live remote sockets converge, reconnect to current host time, and cannot overwrite timers", { timeout: 20000 }, async (t) => {
@@ -88,6 +88,27 @@ test("three live remote sockets converge, reconnect to current host time, and ca
   await pong;
   assert.equal(replicas[1].snapshot?.revision, 30);
   assert.equal(authority.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs, 54000);
+
+  // Expiry is displayed as 0/RUN on every phone. A remote preset must restart
+  // the countdown on the host once, even if the network repeats the command.
+  const shot = "OBS_BASKETBALL_SHOT_CLOCK";
+  const started = phones.map((socket) => waitFor(socket, (m) => m.type === "clock-state" && m.snapshot.revision === 31));
+  send(host, { type: "clock-state", snapshot: authority.apply(shot, { action: "start" }) });
+  await Promise.all(started);
+  hostTime += 55000;
+  for (const replica of replicas) {
+    assert.equal(clockValue(replica.snapshot!.clocks[shot], "down", replica.now()), 0);
+    assert.equal(clockRunning(replica.snapshot!.clocks[shot], "down", replica.now(), clockKeepsRunningAtZero(shot)), true);
+  }
+  const presetDone = phones.map((socket) => waitFor(socket, (m) => m.type === "clock-state" && m.snapshot.revision === 32));
+  const preset: RemoteClientMessage = { type: "clock-command", command: { id: randomUUID(), epoch: authority.epoch, issuedAt: hostTime, key: shot, operation: { action: "reset", seconds: 24, keepRunning: true } } };
+  send(phones[0], preset); send(phones[0], preset);
+  await Promise.all(presetDone);
+  hostTime += 1500;
+  for (const replica of replicas) {
+    assert.equal(replica.snapshot!.clocks[shot].running, true);
+    assert.equal(clockValue(replica.snapshot!.clocks[shot], "down", replica.now()), 22500);
+  }
 
   // The host continues to edit clocks while a phone disconnects.
   phones[0].close();
