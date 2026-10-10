@@ -41,7 +41,7 @@ try {
   await Promise.all([waitForOpen(host), waitForOpen(remote)]);
 
   const hostReady = waitFor(host, "host ready", (message) => message.type === "ready");
-  send(host, { type: "join", sessionId, hostSecret, clientId: randomUUID(), role: "host" });
+  send(host, { type: "join", sessionId, hostSecret, clientId: randomUUID(), role: "host", protocolVersion: 2 });
   const ready = await hostReady;
   if (!ready.uploadState) throw new Error("New host session was not created");
 
@@ -50,7 +50,7 @@ try {
   const remoteReady = waitFor(remote, "remote ready", (message) => message.type === "ready");
   const remoteSnapshot = waitFor(remote, "remote snapshot", (message) => message.type === "snapshot");
   const hostClientCount = waitFor(host, "remote presence", (message) => message.type === "client-count" && message.count === 1);
-  send(remote, { type: "join", sessionId, clientId: randomUUID(), role: "remote" });
+  send(remote, { type: "join", sessionId, clientId: randomUUID(), role: "remote", protocolVersion: 2 });
   await remoteReady;
   await hostClientCount;
   const state = (await remoteSnapshot).state;

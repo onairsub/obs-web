@@ -57,25 +57,26 @@ export function MiniCounter({ label, value, onChange, max = 99 }: { label: strin
   return <div className={styles.miniCounter}><span>{label}</span><div><button onClick={() => onChange(Math.max(0, value - 1))}>−</button><strong>{value}</strong><button onClick={() => onChange(Math.min(max, value + 1))}>+</button></div></div>;
 }
 
-export function ClockPanel({ title, value, running, onStart, onPause, onReset, presets, adjust }: {
+export function ClockPanel({ title, value, running, ready = true, onStart, onPause, onReset, presets, adjust }: {
   title: string;
   value: string;
   running: boolean;
+  ready?: boolean;
   onStart: () => void;
   onPause: () => void;
   onReset: () => void;
   presets?: { label: string; action: () => void }[];
   adjust?: { minus: () => void; plus: () => void; label: string };
 }) {
-  return <Panel title={title} aside={<span className={`${styles.clockState} ${running ? styles.running : ""}`}>{running ? "RUN" : "HOLD"}</span>}>
-    <div className={styles.clockValue}>{value}</div>
+  return <Panel title={title} aside={<span className={`${styles.clockState} ${ready && running ? styles.running : ""}`}>{!ready ? "동기화 중" : running ? "RUN" : "HOLD"}</span>}>
+    <div className={styles.clockValue}>{ready ? value : "—"}</div>
     <div className={styles.buttonRow}>
-      <button className={styles.primaryAction} onClick={running ? onPause : onStart}>{running ? "일시정지" : "시작"}</button>
-      <button onClick={onReset}>리셋</button>
+      <button disabled={!ready} className={styles.primaryAction} onClick={running ? onPause : onStart}>{running ? "일시정지" : "시작"}</button>
+      <button disabled={!ready} onClick={onReset}>리셋</button>
     </div>
     {(presets || adjust) && <div className={styles.subActions}>
-      {presets?.map((preset) => <button key={preset.label} onClick={preset.action}>{preset.label}</button>)}
-      {adjust && <><button onClick={adjust.minus}>− {adjust.label}</button><button onClick={adjust.plus}>+ {adjust.label}</button></>}
+      {presets?.map((preset) => <button disabled={!ready} key={preset.label} onClick={preset.action}>{preset.label}</button>)}
+      {adjust && <><button disabled={!ready} onClick={adjust.minus}>− {adjust.label}</button><button disabled={!ready} onClick={adjust.plus}>+ {adjust.label}</button></>}
     </div>}
   </Panel>;
 }

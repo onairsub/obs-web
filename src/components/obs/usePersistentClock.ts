@@ -1,88 +1,52 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocalStorage } from "usehooks-ts";
-
-type ClockDirection = "up" | "down";
-
-type StoredClock = {
-  running: boolean;
-  baseMs: number;
-  startedAt: number;
-};
+import { useCallback, useEffect, useState } from "react";
+import { useRemoteControl } from "../remote/RemoteControlContext";
+import { clockValue, type ClockDirection, type ClockKey } from "./clockSync";
 
 export function usePersistentClock(
-  storageKey: string,
+  storageKey: ClockKey,
   initialSeconds: number,
   direction: ClockDirection,
   tickMs = 100
 ) {
-  const [clock, setClock] = useLocalStorage<StoredClock>(storageKey, {
-    running: false,
-    baseMs: initialSeconds * 1000,
-    startedAt: 0,
-  });
-  const [now, setNow] = useState(() => Date.now());
-
-  const valueMs = useMemo(() => {
-    if (!clock.running || clock.startedAt === 0) return Math.max(0, clock.baseMs);
-    const delta = Math.max(0, now - clock.startedAt);
-    return direction === "down"
-      ? Math.max(0, clock.baseMs - delta)
-      : Math.max(0, clock.baseMs + delta);
-  }, [clock, direction, now]);
+  const { clockState, clockNow, clockReady, controlClock, role } = useRemoteControl();
+  const [, redraw] = useState(0);
+  const clock = clockState?.clocks[storageKey] ?? { running: false, baseMs: initialSeconds * 1000, startedAt: 0 };
+  const ready = clockReady();
+  // Rendering may interpolate, but it must never publish an expiry or a value
+  // calculated with a phone's clock back to the host.
+  const valueMs = clockValue(clock, direction, clockNow());
+  const running = clock.running && (direction === "up" || valueMs > 0);
 
   useEffect(() => {
-    if (!clock.running) return;
-    const timer = window.setInterval(() => setNow(Date.now()), tickMs);
-    return () => window.clearInterval(timer);
-  }, [clock.running, tickMs]);
-
-  useEffect(() => {
-    if (direction === "down" && clock.running && valueMs <= 0) {
-      setClock({ running: false, baseMs: 0, startedAt: 0 });
-    }
-  }, [clock.running, direction, setClock, valueMs]);
-
-  const currentValue = useCallback((timestamp = Date.now()) => {
-    if (!clock.running || clock.startedAt === 0) return Math.max(0, clock.baseMs);
-    const delta = Math.max(0, timestamp - clock.startedAt);
-    return direction === "down"
-      ? Math.max(0, clock.baseMs - delta)
-      : Math.max(0, clock.baseMs + delta);
-  }, [clock, direction]);
+    if (!clock.running && role !== "remote") return;
+    const tick = () => redraw((value) => value + 1);
+    const timer = window.setInterval(tick, tickMs);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [clock.running, role, tickMs]);
 
   const start = useCallback(() => {
-    if (clock.running) return;
-    const nextBase = direction === "down" && clock.baseMs <= 0
-      ? initialSeconds * 1000
-      : clock.baseMs;
-    setNow(Date.now());
-    setClock({ running: true, baseMs: nextBase, startedAt: Date.now() });
-  }, [clock, direction, initialSeconds, setClock]);
+    controlClock(storageKey, { action: "start" });
+  }, [controlClock, storageKey]);
 
   const pause = useCallback(() => {
-    if (!clock.running) return;
-    setClock({ running: false, baseMs: currentValue(), startedAt: 0 });
-  }, [clock.running, currentValue, setClock]);
+    controlClock(storageKey, { action: "pause" });
+  }, [controlClock, storageKey]);
 
   const reset = useCallback((seconds = initialSeconds, keepRunning = false) => {
-    const timestamp = Date.now();
-    const baseMs = Math.max(0, seconds * 1000);
-    const running = keepRunning && clock.running && baseMs > 0;
-    setNow(timestamp);
-    setClock({ running, baseMs, startedAt: running ? timestamp : 0 });
-  }, [clock.running, initialSeconds, setClock]);
+    controlClock(storageKey, { action: "reset", seconds, keepRunning });
+  }, [controlClock, initialSeconds, storageKey]);
 
   const adjust = useCallback((seconds: number, keepRunning = false) => {
-    const timestamp = Date.now();
-    const baseMs = Math.max(0, currentValue(timestamp) + seconds * 1000);
-    const running = keepRunning && clock.running && baseMs > 0;
-    setNow(timestamp);
-    setClock({ running, baseMs, startedAt: running ? timestamp : 0 });
-  }, [clock.running, currentValue, setClock]);
+    controlClock(storageKey, { action: "adjust", seconds, keepRunning });
+  }, [controlClock, storageKey]);
 
-  return { valueMs, running: clock.running, start, pause, reset, adjust };
+  return { valueMs, running, ready, start, pause, reset, adjust };
 }
 
 export function formatClock(ms: number, tenthsUnderMinute = false) {

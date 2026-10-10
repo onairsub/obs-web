@@ -5,6 +5,7 @@ import type { WebSocket } from "ws";
 import {
   filterRemoteSnapshot,
   parseRemoteClientMessage,
+  REMOTE_PROTOCOL_VERSION,
   type RemoteClientMessage,
   type RemoteOBSState,
   type RemoteServerMessage,
@@ -346,6 +347,11 @@ async function closeSession(sessionId: string, excludeConnectionId?: string) {
 
 async function handleJoin(socket: WebSocket, connection: Connection, message: Extract<RemoteClientMessage, { type: "join" }>) {
   if (connection.role) return;
+  if (message.protocolVersion !== REMOTE_PROTOCOL_VERSION) {
+    send(socket, { type: "error", code: "UPDATE_REQUIRED", message: "타이머 동기화가 업데이트되었습니다. 호스트와 모바일 페이지를 모두 새로고침하세요." });
+    socket.close();
+    return;
+  }
   if (!(await ensureSubscriber())) {
     send(socket, { type: "error", code: "RELAY_UNAVAILABLE", message: "원격 중계 서버에 연결할 수 없습니다." });
     socket.close();
@@ -397,6 +403,17 @@ async function handleMessage(socket: WebSocket, raw: unknown) {
     return;
   }
   if (!connection.role) return;
+
+  if ((message.type === "clock-sync" || message.type === "clock-command") && connection.role === "remote") {
+    await publish({ kind: "message", sessionId: connection.sessionId, audience: "host", message });
+    return;
+  }
+  if (message.type === "clock-state" && connection.role === "host") {
+    // Live host state is never restored from Redis. It would roll back clocks
+    // changed locally while the relay was reconnecting.
+    await publish({ kind: "message", sessionId: connection.sessionId, audience: "remote", message });
+    return;
+  }
 
   if (message.type === "ping") {
     if (connection.role === "remote") await publishPresence(connection, true);
@@ -467,7 +484,14 @@ export function attachRemoteSocket(socket: WebSocket) {
     lastSessionTouch: 0,
   });
   startBackgroundWork();
-  socket.on("message", (data) => void handleMessage(socket, data.toString()));
+  let queue = Promise.resolve();
+  socket.on("message", (data) => {
+    const raw = data.toString();
+    queue = queue.then(() => handleMessage(socket, raw)).catch((error) => {
+      console.error("[remote] message failed", error);
+      send(socket, { type: "error", code: "RELAY_UNAVAILABLE", message: "원격 동기화에 실패했습니다. 연결을 확인해 주세요." });
+    });
+  });
   const close = () => void unregister(socket);
   socket.on("close", close);
   socket.on("error", close);

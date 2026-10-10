@@ -1,3 +1,7 @@
+import { isClockCommand, isClockSnapshot, type ClockCommand, type ClockSnapshot } from "../obs/clockSync";
+
+export const REMOTE_PROTOCOL_VERSION = 2;
+
 export const REMOTE_SYNC_KEYS = [
   "OBS_ACTIVE_SPORT",
   "OBS_SETTINGS_SPORT",
@@ -12,15 +16,12 @@ export const REMOTE_SYNC_KEYS = [
   "OBS_SOCCER_ADDED_TIME",
   "OBS_SOCCER_RED_CARDS",
   "OBS_SOCCER_PENALTIES",
-  "OBS_SOCCER_CLOCK",
   "OBS_BASKETBALL_CONFIG",
   "OBS_BASKETBALL_SCORE",
   "OBS_BASKETBALL_PERIOD",
   "OBS_BASKETBALL_FOULS",
   "OBS_BASKETBALL_TIMEOUTS",
   "OBS_BASKETBALL_POSSESSION",
-  "OBS_BASKETBALL_GAME_CLOCK",
-  "OBS_BASKETBALL_SHOT_CLOCK",
   "OBS_BASEBALL_CONFIG",
   "OBS_BASEBALL_SCORE",
   "OBS_BASEBALL_HITS",
@@ -53,7 +54,10 @@ export type RemoteOBSState = {
 };
 
 export type RemoteClientMessage =
-  | { type: "join"; sessionId: string; clientId: string; role: "host" | "remote"; hostSecret?: string }
+  | { type: "join"; sessionId: string; clientId: string; role: "host" | "remote"; hostSecret?: string; protocolVersion?: number }
+  | { type: "clock-sync"; requestId: string }
+  | { type: "clock-command"; command: ClockCommand }
+  | { type: "clock-state"; snapshot: ClockSnapshot; replyTo?: string }
   | { type: "storage"; key: string; value: string | null }
   | { type: "snapshot"; state: Record<string, string | null> }
   | { type: "command"; command: RemoteCommand }
@@ -63,6 +67,9 @@ export type RemoteClientMessage =
 
 export type RemoteServerMessage =
   | { type: "ready"; role: "host" | "remote"; uploadState?: boolean }
+  | { type: "clock-sync"; requestId: string }
+  | { type: "clock-command"; command: ClockCommand }
+  | { type: "clock-state"; snapshot: ClockSnapshot; replyTo?: string }
   | { type: "storage"; key: string; value: string | null }
   | { type: "snapshot"; state: Record<string, string | null> }
   | { type: "command"; command: RemoteCommand }
@@ -106,6 +113,9 @@ export function parseRemoteClientMessage(raw: unknown): RemoteClientMessage | nu
     const validValue = value.value === null || (typeof value.value === "string" && value.value.length <= 20_000);
     return typeof value.key === "string" && REMOTE_SYNC_KEY_SET.has(value.key) && validValue ? value as RemoteClientMessage : null;
   }
+  if (value.type === "clock-sync") return typeof value.requestId === "string" && value.requestId.length >= 8 && value.requestId.length <= 64 ? value as RemoteClientMessage : null;
+  if (value.type === "clock-command") return isClockCommand(value.command) ? value as RemoteClientMessage : null;
+  if (value.type === "clock-state") return isClockSnapshot(value.snapshot) && (value.replyTo === undefined || (typeof value.replyTo === "string" && value.replyTo.length <= 64)) ? value as RemoteClientMessage : null;
   if (value.type === "snapshot") return isRecord(value.state) ? value as RemoteClientMessage : null;
   if (value.type === "command") return isRemoteCommand(value.command) ? value as RemoteClientMessage : null;
   if (value.type === "obs-state") return isRecord(value.state) && Array.isArray(value.state.scenes) && typeof value.state.currentScene === "string" ? value as RemoteClientMessage : null;

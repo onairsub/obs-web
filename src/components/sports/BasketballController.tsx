@@ -59,8 +59,8 @@ function BasketballControls(props: ControllerRenderProps) {
     <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} increments={[1, 2, 3]} onSwap={swap} />
     <Panel title="동시 타이머">
       <div className={styles.actionGrid}>
-        <button className={styles.primaryAction} onClick={startAll}>둘 다 시작</button>
-        <button onClick={pauseAll}>둘 다 정지</button>
+        <button disabled={!gameClock.ready || !shotClock.ready} className={styles.primaryAction} onClick={startAll}>둘 다 시작</button>
+        <button disabled={!gameClock.ready || !shotClock.ready} onClick={pauseAll}>둘 다 정지</button>
       </div>
       <p className={styles.helper}>게임클락과 샷클락은 독립 조작도 가능합니다.</p>
     </Panel>
@@ -68,6 +68,7 @@ function BasketballControls(props: ControllerRenderProps) {
       title="게임클락"
       value={gameClockText}
       running={gameClock.running}
+      ready={gameClock.ready}
       onStart={gameClock.start}
       onPause={gameClock.pause}
       onReset={() => gameClock.reset(settings.quarterMinutes * 60, true)}
@@ -81,6 +82,7 @@ function BasketballControls(props: ControllerRenderProps) {
       title="샷클락"
       value={shotClockText}
       running={shotClock.running}
+      ready={shotClock.ready}
       onStart={shotClock.start}
       onPause={shotClock.pause}
       onReset={() => shotClock.reset(settings.shotClockSeconds, true)}

@@ -45,6 +45,7 @@ function SoccerControls(props: ControllerRenderProps) {
       title="경기 시계"
       value={clockText}
       running={clock.running}
+      ready={clock.ready}
       onStart={clock.start}
       onPause={clock.pause}
       onReset={() => clock.reset(0)}
