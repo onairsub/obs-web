@@ -44,9 +44,9 @@ export function usePersistentClock(
     }
   }, [clock.running, direction, setClock, valueMs]);
 
-  const currentValue = useCallback(() => {
+  const currentValue = useCallback((timestamp = Date.now()) => {
     if (!clock.running || clock.startedAt === 0) return Math.max(0, clock.baseMs);
-    const delta = Math.max(0, Date.now() - clock.startedAt);
+    const delta = Math.max(0, timestamp - clock.startedAt);
     return direction === "down"
       ? Math.max(0, clock.baseMs - delta)
       : Math.max(0, clock.baseMs + delta);
@@ -66,14 +66,21 @@ export function usePersistentClock(
     setClock({ running: false, baseMs: currentValue(), startedAt: 0 });
   }, [clock.running, currentValue, setClock]);
 
-  const reset = useCallback((seconds = initialSeconds) => {
-    setNow(Date.now());
-    setClock({ running: false, baseMs: Math.max(0, seconds * 1000), startedAt: 0 });
-  }, [initialSeconds, setClock]);
+  const reset = useCallback((seconds = initialSeconds, keepRunning = false) => {
+    const timestamp = Date.now();
+    const baseMs = Math.max(0, seconds * 1000);
+    const running = keepRunning && clock.running && baseMs > 0;
+    setNow(timestamp);
+    setClock({ running, baseMs, startedAt: running ? timestamp : 0 });
+  }, [clock.running, initialSeconds, setClock]);
 
-  const adjust = useCallback((seconds: number) => {
-    setClock({ running: false, baseMs: Math.max(0, currentValue() + seconds * 1000), startedAt: 0 });
-  }, [currentValue, setClock]);
+  const adjust = useCallback((seconds: number, keepRunning = false) => {
+    const timestamp = Date.now();
+    const baseMs = Math.max(0, currentValue(timestamp) + seconds * 1000);
+    const running = keepRunning && clock.running && baseMs > 0;
+    setNow(timestamp);
+    setClock({ running, baseMs, startedAt: running ? timestamp : 0 });
+  }, [clock.running, currentValue, setClock]);
 
   return { valueMs, running: clock.running, start, pause, reset, adjust };
 }

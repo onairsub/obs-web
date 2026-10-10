@@ -70,12 +70,12 @@ function BasketballControls(props: ControllerRenderProps) {
       running={gameClock.running}
       onStart={gameClock.start}
       onPause={gameClock.pause}
-      onReset={() => gameClock.reset(settings.quarterMinutes * 60)}
+      onReset={() => gameClock.reset(settings.quarterMinutes * 60, true)}
       presets={[
-        { label: `쿼터 ${settings.quarterMinutes}:00`, action: () => gameClock.reset(settings.quarterMinutes * 60) },
-        { label: `연장 ${settings.overtimeMinutes}:00`, action: () => gameClock.reset(settings.overtimeMinutes * 60) },
+        { label: `쿼터 ${settings.quarterMinutes}:00`, action: () => gameClock.reset(settings.quarterMinutes * 60, true) },
+        { label: `연장 ${settings.overtimeMinutes}:00`, action: () => gameClock.reset(settings.overtimeMinutes * 60, true) },
       ]}
-      adjust={{ label: "1초", minus: () => gameClock.adjust(-1), plus: () => gameClock.adjust(1) }}
+      adjust={{ label: "1초", minus: () => gameClock.adjust(-1, true), plus: () => gameClock.adjust(1, true) }}
     />
     <ClockPanel
       title="샷클락"
@@ -83,12 +83,12 @@ function BasketballControls(props: ControllerRenderProps) {
       running={shotClock.running}
       onStart={shotClock.start}
       onPause={shotClock.pause}
-      onReset={() => shotClock.reset(settings.shotClockSeconds)}
+      onReset={() => shotClock.reset(settings.shotClockSeconds, true)}
       presets={[
-        { label: `${settings.shotClockSeconds}초`, action: () => shotClock.reset(settings.shotClockSeconds) },
-        { label: `${settings.shortShotClockSeconds}초`, action: () => shotClock.reset(settings.shortShotClockSeconds) },
+        { label: `${settings.shotClockSeconds}초`, action: () => shotClock.reset(settings.shotClockSeconds, true) },
+        { label: `${settings.shortShotClockSeconds}초`, action: () => shotClock.reset(settings.shortShotClockSeconds, true) },
       ]}
-      adjust={{ label: "1초", minus: () => shotClock.adjust(-1), plus: () => shotClock.adjust(1) }}
+      adjust={{ label: "1초", minus: () => shotClock.adjust(-1, true), plus: () => shotClock.adjust(1, true) }}
     />
     <Panel title="쿼터 · 팀 상태">
       <Segments value={period} items={PERIODS} onChange={setPeriod} label="농구 쿼터" />
