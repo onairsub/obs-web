@@ -29,6 +29,7 @@ type RemoteContextValue = {
   error: string;
   obsState: RemoteOBSState;
   clockState: ClockSnapshot | null;
+  clockUpdateRequired: boolean;
   clockNow: () => number;
   clockReady: () => boolean;
   controlClock: (key: ClockKey, operation: ClockOperation) => void;
@@ -51,6 +52,7 @@ const defaultValue: RemoteContextValue = {
   error: "",
   obsState: { scenes: [], currentScene: "" },
   clockState: null,
+  clockUpdateRequired: false,
   clockNow: () => 0,
   clockReady: () => false,
   controlClock: () => {},
@@ -109,6 +111,7 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
   const relayReady = useRef(false);
   const clocksSynchronized = useRef(false);
   const [clockState, setClockState] = useState<ClockSnapshot | null>(null);
+  const [clockUpdateRequired, setClockUpdateRequired] = useState(false);
   const [status, setStatus] = useState<RemoteStatus>(routeSessionId ? "connecting" : "idle");
   const [sessionId, setSessionId] = useState("");
   const [hostSecret, setHostSecret] = useState("");
@@ -132,6 +135,7 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(key, JSON.stringify(clock));
     });
     hostClocks.current = authority;
+    setClockUpdateRequired(false);
     setClockState(authority.snapshot());
     return () => { hostClocks.current = null; };
   }, [role]);
@@ -214,6 +218,7 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
     const probes = new Set<string>();
     if (role === "remote") {
       remoteClocks.current = new RemoteClocks(() => performance.now());
+      setClockUpdateRequired(false);
       clocksSynchronized.current = false;
       setClockState(null);
     }
@@ -292,7 +297,14 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
         }
         if (message.type === "clock-state" && role === "remote" && isClockSnapshot(message.snapshot)) {
           const ownReply = message.replyTo && probes.delete(message.replyTo);
-          if (remoteClocks.current?.accept(message.snapshot, message.replyTo)) {
+          const accepted = remoteClocks.current?.accept(message.snapshot, message.replyTo);
+          const updateRequired = Boolean(remoteClocks.current?.requiresHostUpdate);
+          setClockUpdateRequired(updateRequired);
+          if (updateRequired) {
+            clocksSynchronized.current = false;
+            setClockState(null);
+          }
+          if (accepted) {
             setClockState(message.snapshot);
             if (ownReply) {
               clocksSynchronized.current = true;
@@ -406,6 +418,7 @@ export function RemoteControlProvider({ children }: { children: ReactNode }) {
     error,
     obsState,
     clockState,
+    clockUpdateRequired,
     clockNow,
     clockReady,
     controlClock,

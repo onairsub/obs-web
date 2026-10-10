@@ -81,6 +81,12 @@ export function ControllerShell({ name, sport, accent, children }: ControllerShe
         )}
       </header>
 
+      {isRemote && remote.clockUpdateRequired && <section className={styles.clockUpdateNotice} role="alert">
+        <strong>호스트 PC 새로고침 필요</strong>
+        <p>PC와 모바일의 타이머 버전이 다릅니다. OBS에 연결된 PC 페이지를 새로고침한 뒤 이 화면도 새로고침하세요. 이전 버전에서 24초 재설정 시 멈추는 것을 막기 위해 타이머 조작을 잠시 차단했습니다.</p>
+        <button type="button" onClick={() => window.location.reload()}>이 화면 새로고침</button>
+      </section>}
+
       <section className={styles.sceneBar}>
         <select value={obs.currentScene} onChange={(event) => obs.switchScene(event.target.value)} aria-label="OBS 장면">
           <option value="">장면 선택</option>

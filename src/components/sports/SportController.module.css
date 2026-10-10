@@ -131,6 +131,10 @@
 .segments button.active { color: #fff; background: var(--primary); }
 
 .clockState { color: #888; font-size: 10px; }
+.clockUpdateNotice { margin-bottom: 12px; padding: 12px; border: 1px solid #e6c675; border-radius: 4px; background: #fffbef; color: #694f1b; font-size: 11px; }
+.clockUpdateNotice strong { font-size: 12px; }
+.clockUpdateNotice p { margin: 6px 0 10px; line-height: 1.6; }
+.clockUpdateNotice button { padding: 7px 10px; border: 1px solid #b28b3e; border-radius: 4px; background: #fff; color: inherit; cursor: pointer; font-family: inherit; font-size: 11px; }
 .clockState.running { color: #2e7d32; }
 .clockValue { padding: 4px 0 12px; color: #111; font-variant-numeric: tabular-nums; font-size: 46px; font-weight: 700; line-height: 1; letter-spacing: -.04em; text-align: center; }
 .editableClock { margin-bottom: 12px; text-align: center; }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HostClocks, RemoteClocks, clockValue, clockRunning, clockKeepsRunningAtZero, changeClock, type ClockCommand, type ClockKey } from "../src/components/obs/clockSync";
+import { HostClocks, RemoteClocks, CLOCK_PROTOCOL_VERSION, clockValue, clockRunning, clockKeepsRunningAtZero, changeClock, type ClockCommand, type ClockKey } from "../src/components/obs/clockSync";
 import { filterRemoteSnapshot, parseRemoteClientMessage, REMOTE_SYNC_KEYS } from "../src/components/remote/remoteProtocol";
 
 const shot: ClockKey = "OBS_BASKETBALL_SHOT_CLOCK";
@@ -137,6 +137,57 @@ test("out-of-order snapshots never undo a reset; clock samples from other phones
   assert.equal(remote.accept(old), false);
   assert.equal(remote.accept(old, "other-phone-probe"), false);
   assert.equal(remote.snapshot!.clocks[shot].baseMs, 14000);
+});
+
+test("legacy host that stops a reset at zero cannot arm an updated remote controller", () => {
+  const { host, advance } = fixture();
+  host.apply(shot, { action: "start" });
+  advance(30000);
+  const legacy = { ...host.snapshot(), clockVersion: undefined };
+  const oldClock = legacy.clocks[shot];
+  assert.equal(clockRunning(oldClock, "down", host.now(), true), true, "new UI would show RUN");
+  // Pre-fix hosts calculate wasRunning from remaining > 0, even with keepRunning.
+  const oldReset = changeClock(oldClock, "down", { action: "reset", seconds: 24, keepRunning: true }, host.now(), 24);
+  assert.equal(oldReset.running, false, "reproduces the mixed-version 0/RUN -> 24/HOLD bug");
+  const remote = new RemoteClocks(host.now);
+  remote.probe("legacy-probe");
+  assert.equal(remote.accept(legacy, "legacy-probe"), false);
+  assert.equal(remote.ready(), false);
+  assert.equal(remote.snapshot, null);
+  assert.equal(remote.requiresHostUpdate, true);
+});
+
+test("refreshing the host restores compatible clock control and zero-to-24 stays running", () => {
+  const { host, advance } = fixture();
+  host.apply(shot, { action: "start" });
+  advance(30000);
+  const remote = new RemoteClocks(host.now);
+  remote.probe("old-probe");
+  remote.accept({ ...host.snapshot(), clockVersion: undefined }, "old-probe");
+  assert.equal(remote.requiresHostUpdate, true);
+  remote.probe("new-probe");
+  assert.equal(remote.accept(host.snapshot(), "new-probe"), true);
+  assert.equal(remote.snapshot!.clockVersion, CLOCK_PROTOCOL_VERSION);
+  assert.equal(remote.requiresHostUpdate, false);
+  assert.equal(remote.ready(), true);
+  const reset = host.receive({ id: "preset-command", epoch: host.epoch, issuedAt: host.now(), key: shot, operation: { action: "reset", seconds: 24, keepRunning: true } })!;
+  assert.equal(remote.accept(reset), true);
+  advance(1000);
+  assert.equal(remote.snapshot!.clocks[shot].running, true);
+  assert.equal(clockValue(remote.snapshot!.clocks[shot], "down", remote.now()), 23000);
+});
+
+test("stale or unsolicited legacy snapshots cannot disable a current compatible host", () => {
+  const { host } = fixture();
+  const remote = new RemoteClocks(host.now);
+  remote.probe("current-probe");
+  remote.accept(host.snapshot(), "current-probe");
+  const before = host.snapshot();
+  remote.accept(host.apply(shot, { action: "start" }));
+  assert.equal(remote.accept({ ...before, clockVersion: undefined }), false);
+  assert.equal(remote.accept({ ...before, epoch: "old-host", clockVersion: undefined }), false);
+  assert.equal(remote.requiresHostUpdate, false);
+  assert.equal(remote.ready(), true);
 });
 
 test("expired, duplicate-host and pre-reconnect commands are rejected", () => {

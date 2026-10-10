@@ -1,6 +1,9 @@
 // Timer state is written only by the OBS host. Remote devices send operations,
 // never their own remaining time or wall-clock timestamps.
 export const CLOCK_KEYS = ["OBS_SOCCER_CLOCK", "OBS_BASKETBALL_GAME_CLOCK", "OBS_BASKETBALL_SHOT_CLOCK"] as const;
+// Increment when host-side clock semantics change. A new phone must not send
+// commands to an old host that still treats shot-clock zero as a stopped clock.
+export const CLOCK_PROTOCOL_VERSION = 2;
 export type ClockKey = typeof CLOCK_KEYS[number];
 export type ClockDirection = "up" | "down";
 export type StoredClock = { running: boolean; baseMs: number; startedAt: number };
@@ -9,6 +12,7 @@ export type ClockOperation =
   | { action: "pause" }
   | { action: "reset" | "adjust"; seconds: number; keepRunning: boolean };
 export type ClockSnapshot = {
+  clockVersion?: number; // Absent on legacy hosts; parsed so the UI can explain.
   epoch: string;
   revision: number;
   hostNow: number;
@@ -69,6 +73,7 @@ export function isClockSnapshot(value: unknown): value is ClockSnapshot {
   if (!value || typeof value !== "object") return false;
   const s = value as ClockSnapshot;
   return typeof s.epoch === "string" && s.epoch.length <= 64 && Number.isSafeInteger(s.revision) && s.revision >= 0 && Number.isFinite(s.hostNow)
+    && (s.clockVersion === undefined || (Number.isSafeInteger(s.clockVersion) && s.clockVersion > 0))
     && Boolean(s.clocks) && CLOCK_KEYS.every((key) => isStoredClock(s.clocks[key]));
 }
 
@@ -99,7 +104,7 @@ export class HostClocks {
   }
 
   snapshot(): ClockSnapshot {
-    return { epoch: this.epoch, revision: this.revision, hostNow: this.now(), clocks: { ...this.clocks } };
+    return { clockVersion: CLOCK_PROTOCOL_VERSION, epoch: this.epoch, revision: this.revision, hostNow: this.now(), clocks: { ...this.clocks } };
   }
 
   apply(key: ClockKey, operation: ClockOperation) {
@@ -124,6 +129,7 @@ export class HostClocks {
 
 export class RemoteClocks {
   snapshot: ClockSnapshot | null = null;
+  requiresHostUpdate = false;
   private offset: number | null = null;
   private bestRtt = Infinity;
   private sampledAt = 0;
@@ -145,19 +151,29 @@ export class RemoteClocks {
     const rtt = sent === undefined ? Infinity : received - sent;
     const measured = rtt >= 0 && rtt < 2000;
     // Only a response to this device's live probe can establish a new host.
-    if (this.snapshot?.epoch !== snapshot.epoch) {
-      if (!measured) return false;
+    const newHost = this.snapshot?.epoch !== snapshot.epoch;
+    if (newHost && !measured) return false;
+    if (!newHost && snapshot.revision < this.snapshot!.revision) return false;
+    if (replyTo && !measured) return false;
+    if (snapshot.clockVersion !== CLOCK_PROTOCOL_VERSION) {
+      this.requiresHostUpdate = true;
+      this.snapshot = null;
+      this.offset = null;
+      this.lastSeen = -Infinity;
+      return false;
+    }
+    if (newHost) {
       this.probes.clear();
       this.bestRtt = Infinity;
       this.offset = null;
-    } else if (snapshot.revision < this.snapshot.revision) return false;
-    if (replyTo && !measured) return false;
+    }
     if (measured && (rtt <= this.bestRtt || received - this.sampledAt > 60000)) {
       this.offset = snapshot.hostNow - (sent! + received) / 2;
       this.bestRtt = rtt;
       this.sampledAt = received;
     }
     if (this.offset === null) return false;
+    this.requiresHostUpdate = false;
     this.snapshot = snapshot;
     this.lastSeen = received;
     return true;
