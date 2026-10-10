@@ -90,6 +90,9 @@
 .panel { overflow: hidden; padding: 14px; border: 1px solid #e0e0e0; border-radius: 4px; background: #fff; }
 .panel > header { display: flex; align-items: center; justify-content: space-between; min-height: 20px; margin-bottom: 10px; }
 .panel h2 { margin: 0; color: #444; font-size: 12px; font-weight: 700; }
+.panelActions { display: flex; align-items: center; gap: 4px; }
+.resetPrompt { margin-bottom: 12px; padding: 10px; border: 1px solid #eed7d7; border-radius: 4px; background: #fffafa; }
+.resetPrompt p { margin: 0 0 8px; color: #666; font-size: 11px; line-height: 1.6; }
 
 .panel button,
 .buttonRow button,
@@ -107,6 +110,11 @@
 .panel button:hover { background: rgba(25, 118, 210, .04); }
 .panel button:active { transform: translateY(1px); }
 .panel button:disabled { color: #aaa; border-color: #ddd; background: #fafafa; cursor: default; }
+.keyHint { display: inline-block; margin-inline-start: 4px; padding: 1px 3px; border: 1px solid currentColor; border-radius: 3px; opacity: .75; font-family: inherit; font-size: 9px; font-weight: 500; line-height: 1.1; vertical-align: 1px; }
+.scoreActions button:has(.keyHint) { height: 43px; }
+.scoreActions .keyHint { display: block; width: fit-content; margin: 3px auto 0; }
+.miniCounter button:has(.keyHint) { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 36px; font-size: 14px; line-height: 1; }
+.miniCounter button .keyHint { display: block; width: fit-content; margin: 0; font-size: 8px; }
 .primaryAction { color: #fff !important; border-color: var(--primary) !important; background: var(--primary) !important; font-weight: 600 !important; }
 .dangerAction { color: #d32f2f !important; border-color: #d32f2f !important; background: #fff !important; }
 .textButton { padding: 4px 6px; border: 0 !important; background: transparent !important; font-size: 11px; }
@@ -128,7 +136,7 @@
 .buttonRow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .buttonRow button { height: 38px; font-size: 11px; font-weight: 600; }
 .subActions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
-.subActions button { height: 30px; flex: 1; padding: 0 8px; font-size: 9px; }
+.subActions button { height: 30px; flex: 1; padding: 0 8px; font-size: 9px; white-space: nowrap; }
 
 .counterGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
 .counterGrid.three { grid-template-columns: repeat(3, 1fr); }

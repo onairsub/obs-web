@@ -48,6 +48,10 @@ export const SPORT_SHORTCUTS: Record<SportKey, ShortcutGroup[]> = {
   ],
 };
 
+export function shortcutKey(sport: SportKey, action: ShortcutAction) {
+  return SPORT_SHORTCUTS[sport].flatMap((group) => group.bindings).find((item) => item.action === action)?.key;
+}
+
 // Match the physical keyboard position, including when Korean input is selected.
 // Shift/Ctrl/Alt/Command combinations remain reserved for the browser and OS.
 export function matchShortcut(groups: ShortcutGroup[], event: Pick<KeyboardEvent, "code" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey" | "isComposing" | "keyCode" | "defaultPrevented">) {

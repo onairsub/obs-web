@@ -7,10 +7,11 @@ import { ClockPanel, MiniCounter, Panel, Scoreboard, Segments } from "./ControlP
 import { ControllerRenderProps, ControllerShell } from "./ControllerShell";
 import { DEFAULT_SOCCER_SETTINGS, SoccerSettings } from "./sportSettings";
 import { ControllerShortcuts } from "./ControllerShortcuts";
-import { scoreShortcutHandlers } from "./sportShortcuts";
+import { scoreShortcutHandlers, shortcutKey, type ShortcutAction } from "./sportShortcuts";
 import styles from "./SportController.module.css";
 
 const PERIODS = ["전반", "HT", "후반", "연장1", "연장2", "PK", "FT"] as const;
+const keyFor = (action: ShortcutAction) => shortcutKey("soccer", action);
 
 function SoccerControls(props: ControllerRenderProps) {
   const { connected, setText, setVisible, teamA, teamB, swapTeams } = props;
@@ -51,17 +52,18 @@ function SoccerControls(props: ControllerRenderProps) {
       "added-minus": { run: () => setAddedTime((value) => Math.max(0, value - 1)) },
       "added-plus": { run: () => setAddedTime((value) => Math.min(30, value + 1)) },
     }} />
-    <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} />
+    <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} shortcutSport="soccer" />
     <ClockPanel
       title="경기 시계"
       value={clockText}
       running={clock.running}
       ready={clock.ready}
+      shortcuts={{ toggle: keyFor("clock-toggle"), reset: keyFor("clock-reset"), minus: keyFor("clock-minus"), plus: keyFor("clock-plus") }}
       onStart={clock.start}
       onPause={clock.pause}
       onReset={() => clock.reset(0)}
       presets={[
-        { label: "전반 00:00", action: () => clock.reset(0) },
+        { label: "전반 00:00", action: () => clock.reset(0), shortcut: keyFor("clock-reset") },
         { label: `후반 ${settings.firstHalfMinutes}:00`, action: () => clock.reset(settings.firstHalfMinutes * 60) },
         { label: `연장 ${settings.firstHalfMinutes + settings.secondHalfMinutes}:00`, action: () => clock.reset((settings.firstHalfMinutes + settings.secondHalfMinutes) * 60) },
         { label: `연장 후반 ${settings.firstHalfMinutes + settings.secondHalfMinutes + settings.extraHalfMinutes}:00`, action: () => clock.reset((settings.firstHalfMinutes + settings.secondHalfMinutes + settings.extraHalfMinutes) * 60) },
@@ -71,7 +73,7 @@ function SoccerControls(props: ControllerRenderProps) {
     <Panel title="경기 구간">
       <Segments value={period} items={PERIODS} onChange={setPeriod} label="축구 경기 구간" />
       <div className={`${styles.counterGrid} ${styles.three}`} style={{ marginTop: 8 }}>
-        <MiniCounter label="추가시간" value={addedTime} onChange={setAddedTime} max={30} />
+        <MiniCounter label="추가시간" value={addedTime} onChange={setAddedTime} max={30} shortcuts={{ minus: keyFor("added-minus"), plus: keyFor("added-plus") }} />
         <MiniCounter label={`${teamA} 퇴장`} value={redCards[0]} onChange={(value) => setRedCards((current) => [value, current[1]])} max={5} />
         <MiniCounter label={`${teamB} 퇴장`} value={redCards[1]} onChange={(value) => setRedCards((current) => [current[0], value])} max={5} />
       </div>

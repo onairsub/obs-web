@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dispatchShortcut, matchShortcut, scoreShortcutHandlers, SPORT_SHORTCUTS, type ShortcutHandlers } from "../src/components/sports/sportShortcuts";
+import { dispatchShortcut, matchShortcut, scoreShortcutHandlers, shortcutKey, SPORT_SHORTCUTS, type ShortcutHandlers } from "../src/components/sports/sportShortcuts";
 import { HostClocks } from "../src/components/obs/clockSync";
 
 const key = (code: string, overrides: Record<string, unknown> = {}) => ({
@@ -11,13 +11,15 @@ const key = (code: string, overrides: Record<string, unknown> = {}) => ({
 });
 
 test("every sport has unique single-key actions; related controls use adjacent keys", () => {
-  for (const groups of Object.values(SPORT_SHORTCUTS)) {
+  for (const sport of ["basketball", "soccer", "baseball", "volleyball"] as const) {
+    const groups = SPORT_SHORTCUTS[sport];
     const bindings = groups.flatMap((group) => group.bindings);
     assert.equal(new Set(bindings.map((item) => item.code)).size, bindings.length);
     assert.equal(new Set(bindings.map((item) => item.action)).size, bindings.length);
     for (const item of bindings) {
       assert.match(item.code, /^(Key[A-Z]|Space|Semicolon)$/);
       assert.equal(matchShortcut(groups, key(item.code))?.action, item.action);
+      assert.equal(shortcutKey(sport, item.action), item.key, "button hint must match the actual binding");
     }
   }
   const groups = SPORT_SHORTCUTS.basketball;

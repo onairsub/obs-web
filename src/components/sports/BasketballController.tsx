@@ -3,16 +3,17 @@
 import { formatClock, formatShotClock, usePersistentClock } from "@/components/obs/usePersistentClock";
 import { useEffect } from "react";
 import { useLocalStorage } from "usehooks-ts";
-import { ClockPanel, MiniCounter, Panel, Scoreboard, Segments } from "./ControlPrimitives";
+import { ClockPanel, KeyHint, MiniCounter, Panel, Scoreboard, Segments } from "./ControlPrimitives";
 import { ControllerRenderProps, ControllerShell } from "./ControllerShell";
 import { BasketballSettings, DEFAULT_BASKETBALL_SETTINGS } from "./sportSettings";
 import { ControllerShortcuts } from "./ControllerShortcuts";
-import { scoreShortcutHandlers } from "./sportShortcuts";
+import { scoreShortcutHandlers, shortcutKey, type ShortcutAction } from "./sportShortcuts";
 import styles from "./SportController.module.css";
 
 const PERIODS = ["Q1", "Q2", "Q3", "Q4", "OT", "FT"] as const;
 const MAX_TEAM_FOULS = 9;
 const FOUL_MARKERS = Array.from({ length: MAX_TEAM_FOULS }, (_, index) => index + 1);
+const keyFor = (action: ShortcutAction) => shortcutKey("basketball", action);
 
 function BasketballControls(props: ControllerRenderProps) {
   const { connected, setText, setVisible, teamA, teamB, swapTeams } = props;
@@ -49,6 +50,7 @@ function BasketballControls(props: ControllerRenderProps) {
 
   const startAll = () => { gameClock.start(); shotClock.start(); };
   const pauseAll = () => { gameClock.pause(); shotClock.pause(); };
+  const anyClockRunning = gameClock.running || shotClock.running;
   const changeFoul = (index: 0 | 1, delta: number) => setFouls((current) => {
     const next: [number, number] = [...current];
     next[index] = Math.max(0, Math.min(MAX_TEAM_FOULS, next[index] + delta));
@@ -78,11 +80,11 @@ function BasketballControls(props: ControllerRenderProps) {
       "foul-a-minus": { run: () => changeFoul(0, -1) }, "foul-a-plus": { run: () => changeFoul(0, 1) },
       "foul-b-minus": { run: () => changeFoul(1, -1) }, "foul-b-plus": { run: () => changeFoul(1, 1) },
     }} />
-    <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} increments={[1, 2, 3]} onSwap={swap} />
+    <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} increments={[1, 2, 3]} onSwap={swap} shortcutSport="basketball" />
     <Panel title="동시 타이머">
       <div className={styles.actionGrid}>
-        <button disabled={!gameClock.ready || !shotClock.ready} className={styles.primaryAction} onClick={startAll}>둘 다 시작</button>
-        <button disabled={!gameClock.ready || !shotClock.ready} onClick={pauseAll}>둘 다 정지</button>
+        <button disabled={!gameClock.ready || !shotClock.ready} className={styles.primaryAction} onClick={startAll} aria-keyshortcuts={!anyClockRunning ? keyFor("clocks-toggle") : undefined}>둘 다 시작<KeyHint>{!anyClockRunning ? keyFor("clocks-toggle") : undefined}</KeyHint></button>
+        <button disabled={!gameClock.ready || !shotClock.ready} onClick={pauseAll} aria-keyshortcuts={anyClockRunning ? keyFor("clocks-toggle") : undefined}>둘 다 정지<KeyHint>{anyClockRunning ? keyFor("clocks-toggle") : undefined}</KeyHint></button>
       </div>
       <p className={styles.helper}>게임클락과 샷클락은 독립 조작도 가능합니다.</p>
     </Panel>
@@ -91,11 +93,12 @@ function BasketballControls(props: ControllerRenderProps) {
       value={gameClockText}
       running={gameClock.running}
       ready={gameClock.ready}
+      shortcuts={{ toggle: keyFor("clock-toggle"), reset: keyFor("clock-reset"), minus: keyFor("clock-minus"), plus: keyFor("clock-plus") }}
       onStart={gameClock.start}
       onPause={gameClock.pause}
       onReset={() => gameClock.reset(settings.quarterMinutes * 60, true)}
       presets={[
-        { label: `쿼터 ${settings.quarterMinutes}:00`, action: () => gameClock.reset(settings.quarterMinutes * 60, true) },
+        { label: `쿼터 ${settings.quarterMinutes}:00`, action: () => gameClock.reset(settings.quarterMinutes * 60, true), shortcut: keyFor("clock-reset") },
         { label: `연장 ${settings.overtimeMinutes}:00`, action: () => gameClock.reset(settings.overtimeMinutes * 60, true) },
       ]}
       adjust={{ label: "1초", minus: () => gameClock.adjust(-1, true), plus: () => gameClock.adjust(1, true) }}
@@ -105,20 +108,21 @@ function BasketballControls(props: ControllerRenderProps) {
       value={shotClockText}
       running={shotClock.running}
       ready={shotClock.ready}
+      shortcuts={{ toggle: keyFor("shot-toggle"), reset: keyFor("shot-reset"), minus: keyFor("shot-minus"), plus: keyFor("shot-plus") }}
       onStart={shotClock.start}
       onPause={shotClock.pause}
       onReset={() => shotClock.reset(settings.shotClockSeconds, true)}
       presets={[
-        { label: `${settings.shotClockSeconds}초`, action: () => shotClock.reset(settings.shotClockSeconds, true) },
-        { label: `${settings.shortShotClockSeconds}초`, action: () => shotClock.reset(settings.shortShotClockSeconds, true) },
+        { label: `${settings.shotClockSeconds}초`, action: () => shotClock.reset(settings.shotClockSeconds, true), shortcut: keyFor("shot-reset") },
+        { label: `${settings.shortShotClockSeconds}초`, action: () => shotClock.reset(settings.shortShotClockSeconds, true), shortcut: keyFor("shot-short") },
       ]}
       adjust={{ label: "1초", minus: () => shotClock.adjust(-1, true), plus: () => shotClock.adjust(1, true) }}
     />
     <Panel title="쿼터 · 팀 상태">
       <Segments value={period} items={PERIODS} onChange={setPeriod} label="농구 쿼터" />
       <div className={styles.counterGrid} style={{ marginTop: 8 }}>
-        <MiniCounter label={`${teamA} 파울`} value={fouls[0]} onChange={(value) => setFouls((current) => [value, current[1]])} max={MAX_TEAM_FOULS} />
-        <MiniCounter label={`${teamB} 파울`} value={fouls[1]} onChange={(value) => setFouls((current) => [current[0], value])} max={MAX_TEAM_FOULS} />
+        <MiniCounter label={`${teamA} 파울`} value={fouls[0]} onChange={(value) => setFouls((current) => [value, current[1]])} max={MAX_TEAM_FOULS} shortcuts={{ minus: keyFor("foul-a-minus"), plus: keyFor("foul-a-plus") }} />
+        <MiniCounter label={`${teamB} 파울`} value={fouls[1]} onChange={(value) => setFouls((current) => [current[0], value])} max={MAX_TEAM_FOULS} shortcuts={{ minus: keyFor("foul-b-minus"), plus: keyFor("foul-b-plus") }} />
         <MiniCounter label={`${teamA} 타임아웃`} value={timeouts[0]} onChange={(value) => setTimeouts((current) => [value, current[1]])} max={7} />
         <MiniCounter label={`${teamB} 타임아웃`} value={timeouts[1]} onChange={(value) => setTimeouts((current) => [current[0], value])} max={7} />
       </div>

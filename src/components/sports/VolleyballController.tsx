@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo } from "react";
 import { useLocalStorage } from "usehooks-ts";
-import { MiniCounter, Panel, Scoreboard } from "./ControlPrimitives";
+import { KeyHint, MiniCounter, Panel, Scoreboard } from "./ControlPrimitives";
 import { ControllerRenderProps, ControllerShell } from "./ControllerShell";
 import { ControllerShortcuts } from "./ControllerShortcuts";
-import { scoreShortcutHandlers } from "./sportShortcuts";
+import { scoreShortcutHandlers, shortcutKey, type ShortcutAction } from "./sportShortcuts";
 import styles from "./SportController.module.css";
+
+const keyFor = (action: ShortcutAction) => shortcutKey("volleyball", action);
 
 function VolleyballControls(props: ControllerRenderProps) {
   const { connected, setText, setVisible, teamA, teamB, swapTeams } = props;
@@ -81,7 +83,7 @@ function VolleyballControls(props: ControllerRenderProps) {
       "timeout-off": { run: () => setTimeoutSide("none") },
       "timeout-b": { run: () => setTimeoutSide((current) => current === "B" ? "none" : "B") },
     }} />
-    <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} />
+    <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} shortcutSport="volleyball" />
     <Panel title="세트">
       <div className={styles.labelValue}><span>현재 목표 {target}점 · 2점 차 승리</span><strong>{setWins[0]} : {setWins[1]}</strong></div>
       <div className={styles.actionGrid}>
@@ -93,12 +95,12 @@ function VolleyballControls(props: ControllerRenderProps) {
     </Panel>
     <Panel title="서브 · 타임아웃">
       <div className={`${styles.actionGrid} ${styles.three}`}>
-        <button className={serve === "A" ? styles.toggleActive : ""} onClick={() => setServe("A")}>A 서브</button>
-        <button className={serve === "none" ? styles.toggleActive : ""} onClick={() => setServe("none")}>서브 끔</button>
-        <button className={serve === "B" ? styles.toggleActive : ""} onClick={() => setServe("B")}>B 서브</button>
-        <button className={timeoutSide === "A" ? styles.toggleActive : ""} onClick={() => setTimeoutSide((current) => current === "A" ? "none" : "A")}>A 타임아웃</button>
-        <button className={timeoutSide === "none" ? styles.toggleActive : ""} onClick={() => setTimeoutSide("none")}>타임아웃 끔</button>
-        <button className={timeoutSide === "B" ? styles.toggleActive : ""} onClick={() => setTimeoutSide((current) => current === "B" ? "none" : "B")}>B 타임아웃</button>
+        <button className={serve === "A" ? styles.toggleActive : ""} onClick={() => setServe("A")} aria-keyshortcuts={keyFor("serve-a")}>A 서브<KeyHint>{keyFor("serve-a")}</KeyHint></button>
+        <button className={serve === "none" ? styles.toggleActive : ""} onClick={() => setServe("none")} aria-keyshortcuts={keyFor("serve-off")}>서브 끔<KeyHint>{keyFor("serve-off")}</KeyHint></button>
+        <button className={serve === "B" ? styles.toggleActive : ""} onClick={() => setServe("B")} aria-keyshortcuts={keyFor("serve-b")}>B 서브<KeyHint>{keyFor("serve-b")}</KeyHint></button>
+        <button className={timeoutSide === "A" ? styles.toggleActive : ""} onClick={() => setTimeoutSide((current) => current === "A" ? "none" : "A")} aria-keyshortcuts={keyFor("timeout-a")}>A 타임아웃<KeyHint>{keyFor("timeout-a")}</KeyHint></button>
+        <button className={timeoutSide === "none" ? styles.toggleActive : ""} onClick={() => setTimeoutSide("none")} aria-keyshortcuts={keyFor("timeout-off")}>타임아웃 끔<KeyHint>{keyFor("timeout-off")}</KeyHint></button>
+        <button className={timeoutSide === "B" ? styles.toggleActive : ""} onClick={() => setTimeoutSide((current) => current === "B" ? "none" : "B")} aria-keyshortcuts={keyFor("timeout-b")}>B 타임아웃<KeyHint>{keyFor("timeout-b")}</KeyHint></button>
       </div>
       <div className={styles.counterGrid} style={{ marginTop: 8 }}>
         <MiniCounter label={`${teamA} 사용`} value={timeouts[0]} onChange={(value) => setTimeouts((current) => [value, current[1]])} max={2} />

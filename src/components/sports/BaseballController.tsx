@@ -2,12 +2,14 @@
 
 import { useEffect } from "react";
 import { useLocalStorage } from "usehooks-ts";
-import { Panel, Scoreboard } from "./ControlPrimitives";
+import { KeyHint, Panel, Scoreboard } from "./ControlPrimitives";
 import { ControllerRenderProps, ControllerShell } from "./ControllerShell";
 import { BaseballSettings, DEFAULT_BASEBALL_SETTINGS } from "./sportSettings";
 import { ControllerShortcuts } from "./ControllerShortcuts";
-import { scoreShortcutHandlers } from "./sportShortcuts";
+import { scoreShortcutHandlers, shortcutKey, type ShortcutAction } from "./sportShortcuts";
 import styles from "./SportController.module.css";
+
+const keyFor = (action: ShortcutAction) => shortcutKey("baseball", action);
 
 function BaseballControls(props: ControllerRenderProps) {
   const { connected, setText, setVisible, teamA, teamB, swapTeams } = props;
@@ -64,7 +66,7 @@ function BaseballControls(props: ControllerRenderProps) {
       "ball": { run: addBall }, "strike": { run: addStrike }, "out": { run: recordOut }, "plate-clear": { run: clearPlate },
       "base-1": { run: () => toggleBase(0) }, "base-2": { run: () => toggleBase(1) }, "base-3": { run: () => toggleBase(2) },
     }} />
-    <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} />
+    <Scoreboard teams={[teamA, teamB]} scores={scores} setScores={setScores} onSwap={swap} shortcutSport="baseball" />
     <Panel title="이닝">
       <div className={styles.labelValue}><span>정규 {settings.regulationInnings}회 · {half === "TOP" ? "초 · AWAY 공격" : "말 · HOME 공격"}</span><strong>{inning}회 {half === "TOP" ? "초" : "말"}</strong></div>
       <div className={`${styles.actionGrid} ${styles.three}`}>
@@ -75,15 +77,18 @@ function BaseballControls(props: ControllerRenderProps) {
     </Panel>
     <Panel title="볼 · 스트라이크 · 아웃">
       <div className={`${styles.counterGrid} ${styles.three}`}>
-        <button className={styles.miniCounter} onClick={addBall}><span>BALL</span><strong>{count[0]}</strong></button>
-        <button className={styles.miniCounter} onClick={addStrike}><span>STRIKE</span><strong>{count[1]}</strong></button>
-        <button className={styles.miniCounter} onClick={recordOut}><span>OUT</span><strong>{count[2]}</strong></button>
+        <button className={styles.miniCounter} onClick={addBall} aria-keyshortcuts={keyFor("ball")}><span>BALL<KeyHint>{keyFor("ball")}</KeyHint></span><strong>{count[0]}</strong></button>
+        <button className={styles.miniCounter} onClick={addStrike} aria-keyshortcuts={keyFor("strike")}><span>STRIKE<KeyHint>{keyFor("strike")}</KeyHint></span><strong>{count[1]}</strong></button>
+        <button className={styles.miniCounter} onClick={recordOut} aria-keyshortcuts={keyFor("out")}><span>OUT<KeyHint>{keyFor("out")}</KeyHint></span><strong>{count[2]}</strong></button>
       </div>
-      <button className={styles.wideButton} onClick={() => setCount([0, 0, 0])}>카운트 초기화</button>
+      <div className={styles.actionGrid} style={{ marginTop: 7 }}>
+        <button onClick={clearPlate} aria-keyshortcuts={keyFor("plate-clear")}>타석 초기화<KeyHint>{keyFor("plate-clear")}</KeyHint></button>
+        <button onClick={() => setCount([0, 0, 0])}>카운트 초기화</button>
+      </div>
     </Panel>
     <Panel title="주자">
       <div className={`${styles.actionGrid} ${styles.three}`}>
-        {bases.map((occupied, index) => <button key={index} className={occupied ? styles.toggleActive : ""} onClick={() => toggleBase(index)}>{index + 1}루</button>)}
+        {bases.map((occupied, index) => <button key={index} className={occupied ? styles.toggleActive : ""} onClick={() => toggleBase(index)} aria-keyshortcuts={keyFor(`base-${index + 1}` as ShortcutAction)}>{index + 1}루<KeyHint>{keyFor(`base-${index + 1}` as ShortcutAction)}</KeyHint></button>)}
       </div>
     </Panel>
     <Panel title="안타 · 실책">
