@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HostClocks, RemoteClocks, CLOCK_PROTOCOL_VERSION, clockValue, clockRunning, clockKeepsRunningAtZero, changeClock, type ClockCommand, type ClockKey } from "../src/components/obs/clockSync";
+import { HostClocks, RemoteClocks, CLOCK_PROTOCOL_VERSION, clockValue, clockRunning, clockKeepsRunningAtZero, changeClock, type ClockCommand, type ClockKey, type StoredClock } from "../src/components/obs/clockSync";
 import { filterRemoteSnapshot, parseRemoteClientMessage, REMOTE_SYNC_KEYS } from "../src/components/remote/remoteProtocol";
 
 const shot: ClockKey = "OBS_BASKETBALL_SHOT_CLOCK";
@@ -74,7 +74,7 @@ test("expired shot clock stays RUN at zero and presets or direct input immediate
     const { host, advance } = fixture();
     host.apply(shot, { action: "start" });
     advance(120000);
-    const expired = host.snapshot().clocks[shot];
+    const expired: StoredClock = host.snapshot().clocks[shot];
     assert.equal(clockValue(expired, "down", host.now()), 0);
     assert.equal(clockRunning(expired, "down", host.now(), clockKeepsRunningAtZero(shot)), true);
     const reset = host.apply(shot, { action: "reset", seconds, keepRunning: true });

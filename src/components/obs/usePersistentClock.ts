@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRemoteControl } from "../remote/RemoteControlContext";
-import { clockValue, clockRunning, clockKeepsRunningAtZero, type ClockDirection, type ClockKey } from "./clockSync";
+import { clockValue, clockRunning, clockKeepsRunningAtZero, formatObservedClock, type ClockDirection, type ClockKey, type StoredClock } from "./clockSync";
 
 export function usePersistentClock(
   storageKey: ClockKey,
@@ -12,7 +12,7 @@ export function usePersistentClock(
 ) {
   const { clockState, clockNow, clockReady, controlClock, role } = useRemoteControl();
   const [, redraw] = useState(0);
-  const clock = clockState?.clocks[storageKey] ?? { running: false, baseMs: initialSeconds * 1000, startedAt: 0 };
+  const clock: StoredClock = clockState?.clocks[storageKey] ?? { running: false, baseMs: initialSeconds * 1000, startedAt: 0 };
   const ready = clockReady();
   // Rendering may interpolate, but it must never publish an expiry or a value
   // calculated with a phone's clock back to the host.
@@ -47,7 +47,8 @@ export function usePersistentClock(
     controlClock(storageKey, { action: "adjust", seconds, keepRunning });
   }, [controlClock, storageKey]);
 
-  return { valueMs, running, ready, start, pause, reset, adjust };
+  const observedText = clock.observedDisplay ? formatObservedClock(valueMs, clock.observedDisplay) : undefined;
+  return { valueMs, observedText, running, ready, start, pause, reset, adjust };
 }
 
 export function formatClock(ms: number, tenthsUnderMinute = false) {

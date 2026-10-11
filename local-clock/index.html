@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="local-token" content="__LOCAL_TOKEN__"><title>Clock Reader · 로컬 전광판 인식</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<main>
+  <header><div><span class="eyebrow">OBS WEB / LOCAL VISION</span><h1>전광판을, 그대로.</h1><p>카메라 속 숫자를 읽어 경기 화면의 시계를 맞춥니다.</p></div><span class="privacy"><i></i> 영상은 이 컴퓨터에서만 처리</span></header>
+  <section class="workspace">
+    <div class="viewer card">
+      <div class="section-title"><h2>01 <span>숫자 영역 선택</span></h2><span id="sourceState">카메라 꺼짐</span></div>
+      <div id="stage"><video id="video" muted playsinline></video><canvas id="display"></canvas><canvas id="selection" aria-label="드래그하여 숫자 영역 선택"></canvas><div id="empty"><strong>전광판을 카메라에 담아주세요</strong><span>카메라를 켠 뒤, 숫자 한 줄만 드래그합니다.</span></div></div>
+      <p class="hint">콜론(:)과 소수점(.)까지 포함하고, 다른 숫자나 라벨은 제외하세요. 영역을 바꾸면 동기화가 멈춥니다.</p>
+      <div class="source-controls"><label>영상 입력<select id="source"><option value="camera">이 컴퓨터의 카메라</option><option value="stream">폰 / IP 카메라 스트림</option><option value="demo">테스트 전광판</option></select></label><label id="deviceField">카메라<select id="device"><option value="">기본 카메라</option></select></label><button id="cameraStart" class="secondary">카메라 켜기</button><button id="cameraStop" class="quiet" disabled>끄기</button></div>
+      <div id="streamField" hidden><label>직접 영상 주소<input id="streamUrl" type="url" placeholder="http://192.168.0.10:8080/video 또는 rtsp://…"></label><p class="hint">일반 웹페이지 주소가 아닌 MJPEG/RTSP 스트림이 필요합니다. 폰을 웹캠으로 연결하면 위 카메라 목록에서도 선택할 수 있습니다.</p></div>
+      <div id="demoField" hidden><label>테스트 숫자<input id="demoText" value="50.1" maxlength="8"></label><label class="check"><input id="demoBlank" type="checkbox">숫자 가리기</label></div>
+      <details><summary>영역을 좌표로 입력</summary><div class="coordinates"><label>X %<input id="roiX" type="number" min="0" max="99" value="20"></label><label>Y %<input id="roiY" type="number" min="0" max="99" value="25"></label><label>너비 %<input id="roiW" type="number" min="1" max="100" value="60"></label><label>높이 %<input id="roiH" type="number" min="1" max="100" value="50"></label><button id="applyRoi" class="secondary">적용</button></div></details>
+    </div>
+    <aside>
+      <section class="card"><div class="section-title"><h2>02 <span>웹 세션 연결</span></h2><span id="connectionDot" class="dot"></span></div><label>원격 공유 링크 또는 세션 ID<input id="session" autocomplete="off" placeholder="https://…/obs/remote/…"></label><details><summary>세션 ID만 입력하는 경우</summary><label>중계 서버 주소<input id="origin" type="url" placeholder="https://your-project.vercel.app"></label></details><button id="connect" class="secondary wide">세션 연결</button><p id="relayState" class="hint" role="status">웹에서 원격 컨트롤을 열고 링크를 붙여넣으세요.</p></section>
+      <section class="card"><div class="section-title"><h2>03 <span>인식 & 동기화</span></h2><span id="syncBadge">미리보기</span></div>
+        <div class="readouts"><div><span>카메라 인식</span><strong id="reading">—</strong><small id="confidence">영역 선택 대기</small></div><div><span>웹 시계</span><strong id="webClock">—</strong><small id="webRunning">호스트 연결 대기</small></div></div>
+        <div class="crop-row"><canvas id="crop" width="240" height="80"></canvas><p id="result" role="status">숫자가 보일 때만 반영합니다.</p></div>
+        <p id="rawReading" class="hint" role="status">읽은 후보가 여기에 표시됩니다.</p>
+        <div class="two-col"><label>동기화 대상<select id="target"><option value="OBS_BASKETBALL_SHOT_CLOCK">농구 샷클락</option><option value="OBS_BASKETBALL_GAME_CLOCK">농구 경기 시계</option></select></label><label>동작<select id="mode"><option value="hold">카메라 값 그대로 표시</option><option value="preserve">현재 시작/정지 유지</option></select></label></div>
+        <p id="modeHint" class="hint">웹 시계를 정지하고 관측값으로 갱신합니다. 가려지면 마지막 숫자를 유지합니다.</p>
+        <details><summary>인식 설정</summary><div class="two-col"><label>동기화 최대값 (초)<input id="maximum" type="number" value="60" min="1" max="86400"></label><label>최소 신뢰도<input id="threshold" type="number" value="0.85" min="0.5" max="1" step="0.01"></label></div><label>인식기<select id="reader"><option value="auto">자동 · OCR + 7세그먼트 보조</option><option value="ocr">OCR 모델만</option><option value="segments">7세그먼트만</option></select></label><label>영상 처리<select id="preprocessing"><option value="auto">자동 · LED 밝기 보정</option><option value="color">원본 색상</option><option value="threshold">흑백 대비 강화</option></select></label><p class="hint">7:00 → 420초 · 3:43 → 223초 · 50.1 → 50.1초. 최대값을 초과해도 인식값은 표시하고 전송만 보류합니다.</p></details>
+        <button id="toggle" class="primary wide" disabled>동기화 시작</button><p class="hint">확실한 연속 프레임만 전송합니다. 동일 값은 웹 호스트가 건너뜁니다.</p>
+      </section>
+    </aside>
+  </section>
+  <footer><span id="modelState">로컬 OCR 준비 중</span><span id="metrics">추론 — ms · 프레임 — ms · 왕복 — ms</span></footer>
+  <p id="error" role="alert" hidden></p>
+</main><script src="/app.js" defer></script>
+</body></html>

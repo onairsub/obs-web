@@ -41,3 +41,8 @@ yarn-error.log*
 next-env.d.ts
 
 .vexi
+
+# Local camera OCR runtime (models/dependencies stay on this computer)
+/local-clock/.venv/
+__pycache__/
+*.pyc

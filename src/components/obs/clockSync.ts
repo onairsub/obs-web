@@ -6,13 +6,16 @@ export const CLOCK_KEYS = ["OBS_SOCCER_CLOCK", "OBS_BASKETBALL_GAME_CLOCK", "OBS
 export const CLOCK_PROTOCOL_VERSION = 2;
 export type ClockKey = typeof CLOCK_KEYS[number];
 export type ClockDirection = "up" | "down";
-export type StoredClock = { running: boolean; baseMs: number; startedAt: number };
+export type ClockDisplay = { format: "seconds" | "minutes"; resolutionMs: 100 | 1000 };
+export type StoredClock = { running: boolean; baseMs: number; startedAt: number; observedDisplay?: ClockDisplay };
 export type ClockOperation =
   | { action: "start" }
   | { action: "pause" }
+  | { action: "observe"; seconds: number; resolutionMs: 100 | 1000; capturedAt: number; mode: "preserve" | "hold"; format?: "seconds" | "minutes" }
   | { action: "reset" | "adjust"; seconds: number; keepRunning: boolean };
 export type ClockSnapshot = {
   clockVersion?: number; // Absent on legacy hosts; parsed so the UI can explain.
+  observationVersion?: number; // Additive capability: older manual remotes still work.
   epoch: string;
   revision: number;
   hostNow: number;
@@ -49,6 +52,17 @@ export function clockRunning(clock: StoredClock, direction: ClockDirection, now:
   return clock.running && (keepRunningAtZero || direction === "up" || clockValue(clock, direction, now) > 0);
 }
 
+// Camera observations retain the physical display's punctuation and precision,
+// including decimal shot-clock values above the usual five-second threshold.
+export function formatObservedClock(ms: number, display: ClockDisplay) {
+  const units = Math.ceil(Math.max(0, ms) / display.resolutionMs);
+  const tenths = display.resolutionMs === 100;
+  const totalSeconds = tenths ? Math.floor(units / 10) : units;
+  const suffix = tenths ? `.${units % 10}` : "";
+  if (display.format === "seconds") return `${totalSeconds}${suffix}`;
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}${suffix}`;
+}
+
 export function changeClock(clock: StoredClock, direction: ClockDirection, operation: ClockOperation, now: number, initialSeconds: number, keepRunningAtZero = false): StoredClock {
   const value = clockValue(clock, direction, now);
   const wasRunning = clockRunning(clock, direction, now, keepRunningAtZero);
@@ -58,6 +72,18 @@ export function changeClock(clock: StoredClock, direction: ClockDirection, opera
     return { running: keepRunningAtZero || direction === "up" || baseMs > 0, baseMs, startedAt: now };
   }
   if (operation.action === "pause") return { running: false, baseMs: value, startedAt: 0 };
+  if (operation.action === "observe") {
+    const running = operation.mode === "preserve" && wasRunning;
+    const age = Math.max(0, now - operation.capturedAt);
+    // The observed number is the upper edge of the display's ceil bucket.
+    const baseMs = Math.max(0, operation.seconds * 1000 - (running ? age : 0));
+    const displayedNow = Math.ceil(value / operation.resolutionMs);
+    const observedNow = Math.ceil(baseMs / operation.resolutionMs);
+    const observedDisplay: ClockDisplay = { format: operation.format ?? "seconds", resolutionMs: operation.resolutionMs };
+    const sameDisplay = clock.observedDisplay?.format === observedDisplay.format && clock.observedDisplay.resolutionMs === observedDisplay.resolutionMs;
+    if (displayedNow === observedNow && running === wasRunning) return sameDisplay ? clock : { ...clock, observedDisplay };
+    return { running, baseMs, startedAt: running ? now : 0, observedDisplay };
+  }
   const baseMs = Math.max(0, (operation.action === "adjust" ? value : 0) + operation.seconds * 1000);
   const running = operation.keepRunning && wasRunning && (keepRunningAtZero || direction === "up" || baseMs > 0);
   return { running, baseMs, startedAt: running ? now : 0 };
@@ -66,7 +92,9 @@ export function changeClock(clock: StoredClock, direction: ClockDirection, opera
 export function isStoredClock(value: unknown): value is StoredClock {
   if (!value || typeof value !== "object") return false;
   const c = value as StoredClock;
-  return typeof c.running === "boolean" && Number.isFinite(c.baseMs) && c.baseMs >= 0 && Number.isFinite(c.startedAt) && c.startedAt >= 0;
+  const display = c.observedDisplay;
+  return typeof c.running === "boolean" && Number.isFinite(c.baseMs) && c.baseMs >= 0 && Number.isFinite(c.startedAt) && c.startedAt >= 0
+    && (display === undefined || Boolean(display && (display.format === "seconds" || display.format === "minutes") && (display.resolutionMs === 100 || display.resolutionMs === 1000)));
 }
 
 export function isClockSnapshot(value: unknown): value is ClockSnapshot {
@@ -82,6 +110,13 @@ export function isClockCommand(value: unknown): value is ClockCommand {
   const c = value as ClockCommand;
   if (typeof c.id !== "string" || c.id.length < 8 || c.id.length > 64 || typeof c.epoch !== "string" || c.epoch.length > 64 || !Number.isFinite(c.issuedAt) || !isClockKey(c.key)) return false;
   const op = c.operation;
+  if (op?.action === "observe") {
+    return c.key !== "OBS_SOCCER_CLOCK" && Number.isFinite(op.seconds) && op.seconds >= 0 && op.seconds <= 86400
+      && (op.resolutionMs === 100 || op.resolutionMs === 1000) && Number.isFinite(op.capturedAt)
+      && (op.mode === "preserve" || op.mode === "hold")
+      && (op.format === undefined || op.format === "seconds" || op.format === "minutes")
+      && Math.abs(op.seconds * 1000 / op.resolutionMs - Math.round(op.seconds * 1000 / op.resolutionMs)) < 0.000001;
+  }
   return Boolean(op) && (op.action === "start" || op.action === "pause" || ((op.action === "adjust" || op.action === "reset") && Number.isFinite(op.seconds) && Math.abs(op.seconds) <= 86400 && typeof op.keepRunning === "boolean"));
 }
 
@@ -89,6 +124,8 @@ export class HostClocks {
   private revision = 0;
   private clocks: Record<ClockKey, StoredClock>;
   private seen = new Set<string>();
+  private lastObservation = new Map<ClockKey, number>();
+  private lastManualChange = new Map<ClockKey, number>();
 
   constructor(
     readonly epoch: string,
@@ -104,23 +141,34 @@ export class HostClocks {
   }
 
   snapshot(): ClockSnapshot {
-    return { clockVersion: CLOCK_PROTOCOL_VERSION, epoch: this.epoch, revision: this.revision, hostNow: this.now(), clocks: { ...this.clocks } };
+    return { clockVersion: CLOCK_PROTOCOL_VERSION, observationVersion: 1, epoch: this.epoch, revision: this.revision, hostNow: this.now(), clocks: { ...this.clocks } };
   }
 
-  apply(key: ClockKey, operation: ClockOperation) {
+  apply(key: ClockKey, operation: ClockOperation): ClockSnapshot {
     // Synchronous read/modify/write: consecutive commands use the latest state,
     // even when React has not rendered yet or several phones send at once.
     const clock = changeClock(this.clocks[key], clockDirection(key), operation, this.now(), this.initialSeconds(key), clockKeepsRunningAtZero(key));
+    if (operation.action !== "observe") this.lastManualChange.set(key, this.now());
+    if (clock === this.clocks[key]) return this.snapshot();
     this.clocks[key] = clock;
     this.revision++;
     this.write(key, clock);
     return this.snapshot();
   }
 
-  receive(command: ClockCommand) {
+  receive(command: ClockCommand): ClockSnapshot | null {
+    if (!isClockCommand(command)) return null;
     if (command.epoch !== this.epoch || this.seen.has(command.id)) return null;
     const age = this.now() - command.issuedAt;
     if (age < -2000 || age > 5000) return null;
+    if (command.operation.action === "observe") {
+      const capturedAt = command.operation.capturedAt;
+      const captureAge = this.now() - capturedAt;
+      if (captureAge < -200 || captureAge > 1000 || capturedAt > command.issuedAt + 200
+        || capturedAt <= (this.lastObservation.get(command.key) ?? -Infinity)
+        || capturedAt < (this.lastManualChange.get(command.key) ?? -Infinity)) return null;
+      this.lastObservation.set(command.key, capturedAt);
+    }
     this.seen.add(command.id);
     if (this.seen.size > 2048) this.seen.delete(this.seen.values().next().value!);
     return this.apply(command.key, command.operation);

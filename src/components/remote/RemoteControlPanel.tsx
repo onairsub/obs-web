@@ -45,6 +45,7 @@ export default function RemoteControlPanel({ enabled }: { enabled: boolean }) {
         <div><input ref={inputRef} value={remote.remoteUrl} readOnly /><button onClick={copyLink}>{copied ? "복사됨" : "복사"}</button></div>
       </label>
       <div className={styles.activeRow}><span>{localLink ? "NEXT_PUBLIC_REMOTE_ORIGIN을 설정하면 Vercel 공개 링크가 생성됩니다." : "모바일 네트워크나 다른 Wi-Fi에서도 이 링크로 접속할 수 있습니다."}</span><button onClick={remote.closeSession}>원격 컨트롤 닫기</button></div>
+      <p className={styles.note}>전광판 카메라 연동: 로컬 Clock Reader에 이 링크를 붙여넣고 샷클락 또는 경기 시계를 선택하세요. 호스트 화면은 열어두세요.</p>
     </>}
   </section>;
 }

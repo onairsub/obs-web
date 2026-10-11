@@ -251,3 +251,7 @@ OBS 연결이 완료된 로그인 화면이나 스포츠 선택 화면에서 `�
 - 공통 세로형 셸: `src/components/sports/ControllerShell.tsx`
 - 종목별 설정 모델: `src/components/sports/sportSettings.ts`
 - 종목별 조작: `src/components/sports/*Controller.tsx`
+
+## 로컬 카메라 전광판 인식
+
+`pnpm clock:reader`로 노트북에서 전광판 OCR을 실행할 수 있습니다. 카메라 영역과 기존 원격 세션 링크를 지정하면 농구 샷클락/경기 시계에 숫자를 반영합니다. `7:00`, `3:43`, `50.1` 같은 형식을 지원하며 영상 추론은 로컬에서 처리합니다. 실행 방법, 폰 스트림 입력, 검증과 웹 연동 규약은 [local-clock/README.md](local-clock/README.md)를 참고하세요.

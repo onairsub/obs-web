@@ -8,7 +8,9 @@
     "start": "NODE_ENV=production tsx server.ts",
     "test:remote": "node scripts/remote-smoke.mjs",
     "test:connection": "tsx --test scripts/remote-connection.test.ts scripts/remote-renewal.test.ts",
-    "test:clocks": "tsx --test scripts/clock-sync.test.ts scripts/clock-relay.test.ts",
+    "test:clocks": "tsx --test scripts/clock-sync.test.ts scripts/clock-relay.test.ts scripts/camera-clock.test.ts",
+    "clock:reader": "bash local-clock/run.sh",
+    "test:camera": "PYTHONPATH=local-clock local-clock/.venv/bin/python -m unittest discover -s local-clock/tests && tsx --test scripts/camera-relay.test.ts",
     "test:shortcuts": "node --import tsx --test scripts/shortcuts.test.ts",
     "test:basketball": "node --import tsx --test scripts/basketball-fouls.test.ts scripts/clock-input.test.ts",
     "lint": "eslint ."
