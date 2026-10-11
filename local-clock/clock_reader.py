@@ -190,7 +190,9 @@ class ReadingGate:
         if self.last_frame_ms is not None and captured_ms - self.last_frame_ms < 40:
             return False, "중복/역순 프레임은 건너뜀"
         self.last_frame_ms = captured_ms
-        if reading and reading.confidence < confidence:
+        decimal_tracking = tracking and reading is not None and reading.resolution_ms == 100
+        candidate_floor = ClockTrajectory.candidate_floor(confidence) if decimal_tracking else confidence
+        if reading and reading.confidence < candidate_floor:
             reading = None
         current = Observation(reading, captured_ms)
         self.history = [x for x in self.history if captured_ms - x.captured_ms <= self.window_ms]
@@ -211,12 +213,16 @@ class ReadingGate:
                 allowance = max(0, captured_ms-old.captured_ms)/1000 + 2
                 if abs(old.reading.seconds-reading.seconds) > allowance + 1e-6:
                     return False, "소수 후보 변화가 경과 시간 + 2초 초과 · 보류"
-            self.decimal_fit = self.trajectory.observe(reading, captured_ms)
+            self.decimal_fit = self.trajectory.observe(reading, captured_ms, confidence)
             if self.decimal_fit is None:
-                return False, "소수 관측점에서 정지/감소 직선 가설 확인 중"
+                evidence = self.trajectory.diagnostics()
+                run, stop = evidence['running'], evidence['stopped']
+                return False, (f"소수 가설 검증 중 · 감소 {run['inliers']}/{run['points']}점 / 정지 {stop['inliers']}/{stop['points']}점"
+                               + (" · 낮은 OCR 신뢰도는 5점 이상 추가 검증" if reading.confidence < confidence else ""))
             self.evidence = self.decimal_fit.inliers
             self._confirm(reading, captured_ms, shot_clock=shot_clock)
-            return True, f"소수 {'감소' if self.decimal_fit.rate else '정지'} 가설 · {self.evidence}/{self.decimal_fit.points}점 일치"
+            return True, (f"소수 {'감소' if self.decimal_fit.rate else '정지'} 가설 · {self.evidence}/{self.decimal_fit.points}점 일치"
+                          + (" · 여러 관측의 시간 일치로 검증" if self.decimal_fit.temporal_evidence else ""))
 
         required, span_ms, label = 3, 240, "최근 1초 후보 확인"
         shot_recovery = game_reset = False
@@ -363,6 +369,8 @@ class ClockTracker:
             # preview current() above is already in capture-time coordinates.
             desired_now = max(0, seconds - (age_ms/1000 if current and decimal_fit.rate else 0))
             reason = f"소수 {'감소' if decimal_fit.rate else '정지'} 가설 · {decimal_fit.inliers}/{decimal_fit.points}점 · 오차 ±{decimal_fit.uncertainty_ms}ms"
+            if decimal_fit.temporal_evidence:
+                reason += " · 여러 관측의 시간 일치로 검증"
             same_mode = clock is not None and clock["running"] == bool(decimal_fit.rate)
             tolerance = max(.12, decimal_fit.uncertainty_ms*2/1000) if decimal_fit.rate else .025
             if same_mode and (abs(clock["seconds"]-desired_now) <= tolerance or

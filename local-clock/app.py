@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import faulthandler
+from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import asdict, replace
 import io
@@ -31,6 +32,7 @@ CLOCK_KEYS = ("OBS_BASKETBALL_SHOT_CLOCK", "OBS_BASKETBALL_GAME_CLOCK")
 gates = {key: ReadingGate() for key in CLOCK_KEYS}
 trackers = {key: ClockTracker() for key in CLOCK_KEYS}
 phases = {key: ClockPhase() for key in CLOCK_KEYS}
+observation_traces = {key: deque(maxlen=120) for key in CLOCK_KEYS}
 
 
 def confirmed_reading(key):
@@ -43,6 +45,7 @@ def reset_channels(keys=None):
         gates[key].reset()
         trackers[key].reset()
         phases[key].reset()
+        observation_traces[key].clear()
 ocr = None
 model_status = "로컬 OCR 모델 준비 중"
 camera = None
@@ -143,9 +146,18 @@ async def status():
             "clocks": {key: {"current": relay.current(key), "preview": trackers[key].current(now_ms()),
                               "confirmed": asdict(confirmed_reading(key)) if gates[key].confirmed else None,
                               "trajectory": gates[key].trajectory.status(),
+                              "trajectory_evidence": gates[key].trajectory.diagnostics(),
                               "timing": phases[key].status(now_ms())} for key in CLOCK_KEYS},
             "stream": camera.status if camera else None, "generation": generation,
             "settings": settings.model_dump()}
+
+
+@app.get("/api/diagnostics")
+async def diagnostics():
+    # Bounded, process-local numeric traces let us replay a real failure without
+    # storing camera images, shared links, or session credentials.
+    return {"algorithm": "decimal-trajectory-evidence-v2", "now_ms": now_ms(),
+            "clocks": {key: list(trace) for key, trace in observation_traces.items()}}
 
 
 class Connection(BaseModel):
@@ -385,13 +397,18 @@ async def recognize(request: Request):
                 tracker.reset()
         elif accepted and not armed:
             reason += " · 미리보기"
-        return {"key": key, "reading": asdict(reading) if reading else None, "accepted": accepted, "timing": timing,
+        result = {"key": key, "reading": asdict(reading) if reading else None, "accepted": accepted, "timing": timing,
                 "trajectory": gate.trajectory.status(),
+                "trajectory_evidence": gate.trajectory.diagnostics(),
                 "confirmed": asdict(confirmed) if confirmed else None,
                 "confirmation_frames": gate.evidence,
                 "sent": sent, "reason": reason, "inference_ms": round(elapsed),
                 "raw_text": recognition.raw_text, "method": recognition.method,
                 "age_ms": round(now_ms() - captured)}
+        observation_traces[key].append({"captured_ms": captured,
+            **{name: result[name] for name in ("reading", "raw_text", "accepted", "sent", "reason",
+                                               "trajectory", "trajectory_evidence", "inference_ms", "age_ms")}})
+        return result
 
 
 if __name__ == "__main__":

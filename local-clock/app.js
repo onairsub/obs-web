@@ -19,7 +19,7 @@ function showCandidate(key,data) {
   if(reading) {
     if(key==='OBS_BASKETBALL_GAME_CLOCK' && reading.seconds<60) details.push('1분 미만');
     details.push(reading.resolution_ms===100?'소수 인식':reading.text.includes(':')?'분:초 인식':'정수 인식');
-    details.push(`신뢰도 ${Math.round(reading.confidence*100)}%`);
+    details.push(`OCR ${Math.round(reading.confidence*100)}%`);
   } else details.push(data?.raw_text?'시간 형식 확인 안 됨':'인식 안 됨');
   $('candidateDetail'+name).textContent=details.join(' · ');
   if(performance.now()>(manualNoticeUntil[key]||0)) $('candidateState'+name).textContent=data?.sent?'웹 전송':!data?.accepted?'미반영 · '+(data?.reason||'인식 대기'):!enabled?'미리보기 · 웹 미전송':'웹 타이머 유지';
@@ -322,7 +322,7 @@ async function recognizeLoop() {
           if(frameGeneration!==generation || epoch!==sourceEpoch) break;
           showCandidate(key,data);
           if('confirmed' in data) $('reading'+suffix(key)).textContent=data.confirmed?.text||'—';
-          $('confidence'+suffix(key)).textContent=data.confirmed?(data.accepted?'확인됨':'마지막 확정값'):'여러 프레임 확인 중';
+          $('confidence'+suffix(key)).textContent=data.confirmed?(data.accepted&&data.trajectory?`${data.trajectory.rate?'감소':'정지'} ${data.trajectory.inliers}/${data.trajectory.points}점`:data.accepted?'확인됨':'마지막 확정값'):'여러 프레임 확인 중';
           $('result'+suffix(key)).textContent=data.reason;
           if(key===$('target').value) {
             $('rawReading').textContent=data.raw_text?`${label(key)} 후보: ${data.raw_text}${data.method?' · '+data.method:''}`:'읽은 후보 없음';
@@ -342,9 +342,10 @@ async function statusLoop() {
       clockOffset=data.now_ms-(start+end)/2;connected=data.connected;modelReady=data.model_ready;
       $('modelState').textContent=data.model;$('relayState').textContent=data.relay;$('connectionDot').classList.toggle('active',connected);
       for(const key of clockKeys) {
-        const state=data.clocks?.[key],current=state?.current||state?.preview,timing=state?.timing,fit=state?.trajectory;
+        const state=data.clocks?.[key],current=state?.current||state?.preview,timing=state?.timing,fit=state?.trajectory,evidence=state?.trajectory_evidence;
         displayClocks[key]={clock:current||null,at:data.now_ms-clockOffset};
-        $('timing'+suffix(key)).textContent=fit?`소수 ${fit.rate?'감소':'정지'} 가설 · ${fit.inliers}/${fit.points}점 · 오차 ±${fit.uncertainty_ms}ms${data.now_ms-fit.captured_ms>1500?' · 재관측 대기':''}`:timing?.samples?`초 경계 ${timing.phase_ms}ms · 추정 범위 ±${timing.uncertainty_ms}ms`:'숫자 전환 시각 측정 중';
+        const hypothesis=(name,model)=>model?`${name} ${model.inliers}/${model.points}점 (${Math.round(model.support*100)}%)`:`${name} 증거 없음`;
+        $('timing'+suffix(key)).textContent=evidence?.observations?`${hypothesis('감소',evidence.running)} / ${hypothesis('정지',evidence.stopped)} · ${data.now_ms-evidence.captured_ms>1500?'재관측 대기':fit?.captured_ms===evidence.captured_ms?`${fit.rate?'감소':'정지'} 채택${fit.temporal_evidence?' · 시간 일치 검증':''}`:'추가 검증 중'}`:timing?.samples?`초 경계 ${timing.phase_ms}ms · 추정 범위 ±${timing.uncertainty_ms}ms`:'숫자 전환 시각 측정 중';
         if(candidateUpdated[key]!==undefined && performance.now()-candidateUpdated[key]>1500) clearCandidate(key,'새 프레임 대기 · 확정값은 아래에 유지');
       }
       renderClocks();

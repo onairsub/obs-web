@@ -207,3 +207,89 @@ class DecimalTrackingTests(unittest.TestCase):
         self.gate.set_baseline(parse_clock('3:00'),2000,shot_clock=False)
         self.assertIsNone(self.gate.trajectory.last_fit)
         self.assertIn('경과 시간 + 2초',self.see('8.1',2180)[1])
+
+
+class TemporalEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.gate = ReadingGate()
+        self.tracker = ClockTracker()
+
+    def see(self, value, t, confidence=.8, threshold=.85, tracking=True):
+        reading = parse_clock(value,confidence)
+        accepted,reason = self.gate.accept(reading,t,t+20,confidence=threshold,
+                                         shot_clock=False,tracking=tracking)
+        if accepted:
+            self.tracker.decide(reading,t,shot_clock=False,decimal_fit=self.gate.decimal_fit)
+        return accepted,reason
+
+    def test_every_decimal_value_can_change_without_resetting_evidence(self):
+        # No value repeats over a complete final-minute countdown.
+        for i in range(333):
+            value = math.ceil((59.9-i*.18)*10-1e-8)/10
+            accepted,_ = self.see(f'{value:.1f}',1000+i*180)
+            self.assertEqual(accepted,i>=4,(i,value))
+            if accepted:
+                self.assertEqual(self.gate.decimal_fit.rate,1)
+                self.assertTrue(self.gate.decimal_fit.temporal_evidence)
+                self.assertTrue(self.tracker.current(1000+i*180)['running'])
+        evidence = self.gate.trajectory.diagnostics()
+        self.assertGreater(evidence['running']['support'],evidence['stopped']['support'])
+        self.assertEqual(evidence['running']['inliers'],9)
+
+    def test_mixed_confidence_no_longer_discards_all_but_isolated_frames(self):
+        for i in range(15):
+            accepted,_ = self.see(f'{50-i*.2:.1f}',1000+i*200,
+                                  confidence=.94 if i%5 == 0 else .8)
+            self.assertEqual(accepted,i>=4)
+        self.assertEqual(self.gate.decimal_fit.rate,1)
+
+    def test_pooled_running_evidence_still_detects_stop_resume_and_keeps_ticking(self):
+        for i in range(6):
+            self.see(f'{50-i*.2:.1f}',1000+i*200)
+        self.assertTrue(self.tracker.current(2100)['running'])
+        for i in range(1,5):
+            self.see('49.0',2000+i*200)
+        self.assertEqual(self.tracker.current(5000),{'seconds':49.0,'running':False})
+        for i in range(1,6):
+            self.see(f'{49-i*.2:.1f}',2800+i*200)
+        at = self.tracker.current(3800)
+        self.assertTrue(at['running'])
+        self.assertAlmostEqual(self.tracker.current(4800)['seconds'],at['seconds']-1)
+
+    def test_low_quality_and_inconsistent_sequences_cannot_gain_temporal_trust(self):
+        for confidence,values in [(.64,[f'{50-i*.2:.1f}' for i in range(15)]),
+                                  (.8,[f'{50-i*.4:.1f}' for i in range(15)]),
+                                  (.8,['50.0','48.1','49.7','47.2','50.8']*3)]:
+            self.setUp()
+            for i,value in enumerate(values):
+                self.assertFalse(self.see(value,1000+i*180,confidence=confidence)[0],(value,confidence))
+            self.assertIsNone(self.tracker.anchor)
+
+    def test_one_bad_point_after_pooled_confirmation_is_never_sent_as_a_new_value(self):
+        for i in range(6):
+            self.see(f'{50-i*.2:.1f}',1000+i*200)
+        anchor = self.tracker.anchor
+        self.assertFalse(self.see('47.6',2200)[0])
+        self.assertEqual(self.tracker.anchor,anchor)
+        self.assertEqual(self.gate.confirmed.seconds,49.0)
+
+    def test_manual_mode_integer_readings_and_user_threshold_retain_their_contract(self):
+        for i in range(8):
+            self.assertFalse(self.see('49.0',1000+i*180,tracking=False)[0])
+        self.setUp()
+        for i in range(8):
+            self.assertFalse(self.see('49',1000+i*180)[0])
+        self.setUp()
+        for i in range(3):
+            accepted,_ = self.see(f'{49-i*.2:.1f}',1000+i*180,confidence=.6,threshold=.5)
+        self.assertTrue(accepted,'an explicitly lowered threshold must not be silently raised')
+
+    def test_diagnostics_show_pending_hypotheses_before_any_value_is_confirmed(self):
+        self.see('59.9',1000)
+        self.see('59.7',1180)
+        self.assertIsNone(self.gate.confirmed)
+        evidence = self.gate.trajectory.diagnostics()
+        self.assertEqual(evidence['running']['inliers'],2)
+        self.assertFalse(evidence['running']['qualified'])
+        self.assertEqual(evidence['running']['strong_inliers'],0)
+        self.assertEqual(evidence['captured_ms'],1180)

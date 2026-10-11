@@ -53,6 +53,7 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
     assert.match(response.headers.get("content-type") ?? "", /javascript/);
   }
   assert.equal((await fetch(`${origin}/api/status`)).status, 403);
+  assert.equal((await fetch(`${origin}/api/diagnostics`)).status, 403);
   async function json(path: string, body?: unknown) {
     const response = await fetch(origin + path, { headers: { "X-Local-Token": token, "Content-Type": "application/json" },
       ...(body ? { method: "POST", body: JSON.stringify(body) } : {}) });
@@ -304,6 +305,8 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
       await delay(180);
       const result = await frame(images[i + 1], false, generation, key);
       assert.equal(result.accepted, i === 2, `${key} ${decimals[i]}: ${JSON.stringify(result)}`);
+      assert.equal(result.trajectory_evidence.running.inliers,i+1,'different digits accumulate evidence for one running line');
+      if (i===2) assert.equal(result.trajectory_evidence.running.qualified,true);
     }
     await delay(80);
     const moving = host.snapshot().clocks[key];
@@ -366,6 +369,13 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   assert.equal((await frame(blank,false,generation,gameKey)).sent,false);
   assert.deepEqual(host.snapshot().clocks[gameKey],resumedDecimal);
   assert.ok(clockValue(resumedDecimal,'down',Date.now())<resumedValue-450,'resumed timer keeps counting while occluded');
+  const diagnostics=await json('/api/diagnostics');
+  assert.equal(diagnostics.algorithm,'decimal-trajectory-evidence-v2');
+  const gameTrace=diagnostics.clocks[gameKey];
+  assert.ok(gameTrace.length>=7 && gameTrace.length<=120);
+  assert.ok(gameTrace.some((entry:{trajectory_evidence:{running:{qualified:boolean}|null}})=>entry.trajectory_evidence.running?.qualified));
+  assert.equal(gameTrace.at(-1).reading,null,'blank OCR remains distinguishable from a rejected numeric candidate');
+  assert.ok(gameTrace.every((entry:object)=>!('image' in entry) && !('session' in entry)));
 
   // Hold mode still needs a useful local preview when synchronization is off.
   generation = (await json("/api/settings", { enabled: false, keys: [shotKey, gameKey], mode: "hold" })).generation;
