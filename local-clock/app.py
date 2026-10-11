@@ -367,7 +367,7 @@ async def recognize(request: Request):
         elif accepted and mode == "auto" and reading.resolution_ms == 100 and armed and not relay.decimal_tracking_supported():
             mode, reason = None, "소수 가설 추적을 지원하도록 OBS 웹 호스트를 새로고침하세요."
         elif accepted and mode == "auto":
-            mode, reason = tracker.decide(reading, captured,
+            mode, reason = tracker.decide(confirmed, captured,
                                          current=current,
                                          shot_clock=shot_clock,
                                          compensation_seconds=settings.compensation_seconds,
@@ -378,14 +378,18 @@ async def recognize(request: Request):
                                          game_pause_confirmed=gate.game_pause_confirmed,
                                          shot_low_sync=settings.shot_low_sync, game_low_sync=settings.game_low_sync,
                                          decimal_fit=gate.decimal_fit)
-            if mode and gate.decimal_fit is not None:
+            if mode == "hold":
+                # Stop at exactly the confirmed value shown in the UI, for
+                # either clock and either precision. Fits only supply run offsets.
+                sync_reading = confirmed
+                offset_ms = 0
+                phase.reset()
+            elif mode == "run" and gate.decimal_fit is not None:
                 sync_reading = replace(confirmed, seconds=tracker.sync_seconds)
                 offset_ms = tracker.sync_offset_ms
             elif mode == "run":
                 offset_ms = timing["phase_ms"] + settings.compensation_seconds * 1000
                 reason += f" · 초 경계 {timing['phase_ms']}ms / 추가 {round(settings.compensation_seconds * 1000)}ms"
-            elif mode == "hold":
-                phase.reset()
         elif accepted and mode == "hold":
             tracker.hold(reading, captured)
             phase.reset()

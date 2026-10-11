@@ -377,6 +377,31 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   assert.equal(gameTrace.at(-1).reading,null,'blank OCR remains distinguishable from a rejected numeric candidate');
   assert.ok(gameTrace.every((entry:object)=>!('image' in entry) && !('session' in entry)));
 
+  // A stop fit may use a different representative tenth from the newest
+  // confirmed observation. Both the local preview and host must use the latter.
+  const fourEight = execFileSync(python, ['local-clock/benchmark.py', '--jpeg', '4.8']);
+  for (const key of [shotKey, gameKey]) {
+    generation = (await json('/api/settings', { enabled: true, keys: [key], mode: 'auto',
+      shot_low_sync: true, game_low_sync: true, compensation_seconds: 1 })).generation;
+    let result;
+    for (const image of [fourEight, fourNine, fourEight, fourNine]) {
+      await delay(220);
+      result = await frame(image, false, generation, key);
+    }
+    assert.equal(result.accepted, true, JSON.stringify(result));
+    assert.equal(result.trajectory.rate, 0);
+    assert.equal(result.confirmed.seconds, 4.9);
+    assert.equal(result.sent, true, JSON.stringify(result));
+    for (let i = 0; i < 50 && host.snapshot().clocks[key].baseMs !== 4900; i++) await delay(20);
+    const clock = host.snapshot().clocks[key];
+    assert.equal(clock.running, false);
+    assert.equal(clock.baseMs, result.confirmed.seconds * 1000, 'hold restores the exact confirmed value without delay subtraction');
+    assert.deepEqual((await json('/api/status')).clocks[key].preview, { seconds: 4.9, running: false });
+    await delay(300);
+    assert.equal((await frame(blank, false, generation, key)).sent, false);
+    assert.equal(clockValue(host.snapshot().clocks[key], 'down', Date.now()), 4900);
+  }
+
   // Hold mode still needs a useful local preview when synchronization is off.
   generation = (await json("/api/settings", { enabled: false, keys: [shotKey, gameKey], mode: "hold" })).generation;
   const beforePreview = host.snapshot().revision;

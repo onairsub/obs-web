@@ -171,6 +171,43 @@ class DecimalTrackingTests(unittest.TestCase):
         self.assertEqual(self.tracker.anchor,anchor)
         self.assertTrue(self.tracker.current(4000)['running'])
 
+    def test_stop_overwrites_prediction_with_confirmed_value_not_fit_median(self):
+        for shot_clock in (False, True):
+            with self.subTest(shot_clock=shot_clock):
+                gate, tracker = ReadingGate(), ClockTracker()
+                # Both tenths support a stationary line, whose median differs
+                # from the newest accepted value shown in the confirmed field.
+                for i, value in enumerate(['4.0', '4.1', '4.0', '4.1']):
+                    t = 1000 + i * 200
+                    reading = parse_clock(value)
+                    accepted, _ = gate.accept(reading, t, t+30, shot_clock=shot_clock, tracking=True)
+                self.assertTrue(accepted)
+                self.assertEqual(gate.decimal_fit.rate, 0)
+                self.assertNotEqual(gate.decimal_fit.seconds, gate.confirmed.seconds)
+                mode, _ = tracker.decide(gate.confirmed, t, shot_clock=shot_clock,
+                    decimal_fit=gate.decimal_fit, shot_low_sync=True,
+                    current={'seconds': 2.7, 'running': True},
+                    compensation_seconds=1, phase_ms=500, age_ms=300)
+                self.assertEqual(mode, 'hold')
+                self.assertEqual(tracker.sync_seconds, gate.confirmed.seconds)
+                self.assertEqual(tracker.sync_offset_ms, 0)
+                self.assertEqual(tracker.current(t+5000), {'seconds': 4.1, 'running': False})
+
+    def test_stop_corrects_even_a_small_paused_error_and_reanchors_local_preview(self):
+        for value, t in [('8.9', 1000), ('8.7', 1180), ('8.5', 1360)]:
+            self.see(value, t, compensation_seconds=.3)
+        self.assertGreater(self.tracker.sync_offset_ms, 0)
+        for i in range(3):
+            mode, _ = self.see('8.1', 1600+i*180, current={'seconds': 8.09, 'running': False})
+        self.assertEqual(mode, 'hold', 'a 10ms error must not prevent an exact confirmed hold')
+        self.assertEqual(self.tracker.sync_seconds, 8.1)
+        self.assertEqual(self.tracker.sync_offset_ms, 0)
+        # Even when the host is already correct, local prediction must stop too.
+        self.tracker.anchor = (8.1, 1960, True)
+        mode, _ = self.see('8.1', 2140, current={'seconds': 8.1, 'running': False})
+        self.assertIsNone(mode, 'an already exact stopped host needs no duplicate write')
+        self.assertEqual(self.tracker.current(5000), {'seconds': 8.1, 'running': False})
+
     def test_missing_frames_between_sparse_valid_stop_evidence_do_not_erase_it(self):
         for value,t in [('49.4',1000),('49.2',1180),('49.0',1360)]:
             self.see(value,t)

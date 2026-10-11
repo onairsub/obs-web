@@ -316,6 +316,18 @@ class ClockTracker:
 
     def hold(self, reading: Reading, captured_ms: float):
         self.anchor = (reading.seconds, captured_ms, False)
+        self.sync_seconds = reading.seconds
+        self.sync_offset_ms = 0
+
+    def _hold_confirmed(self, reading, captured_ms, clock, reason):
+        # The fit decides whether motion stopped; the accepted observation is
+        # the value to display. Never retain a running phase/latency adjustment.
+        # Reanchor locally even if the host is already stopped at this value.
+        self.hold(reading, captured_ms)
+        reason += " · 확정값으로 정지"
+        if clock and not clock["running"] and abs(clock["seconds"] - reading.seconds) < 1e-9:
+            return None, reason
+        return "hold", reason
 
     def set_baseline(self, reading, captured_ms, *, running):
         self.reset()
@@ -362,27 +374,28 @@ class ClockTracker:
         if reading.resolution_ms == 100:
             if decimal_fit is None:
                 return None, "소수 직선 가설 확인 중 · 기존 타이머 유지"
-            mode = "run" if decimal_fit.rate else "hold"
-            physical = decimal_fit.seconds
-            seconds = max(0, physical - (compensation_seconds if decimal_fit.rate else 0))
-            # The authoritative current value is sampled after inference. Local
-            # preview current() above is already in capture-time coordinates.
-            desired_now = max(0, seconds - (age_ms/1000 if current and decimal_fit.rate else 0))
             reason = f"소수 {'감소' if decimal_fit.rate else '정지'} 가설 · {decimal_fit.inliers}/{decimal_fit.points}점 · 오차 ±{decimal_fit.uncertainty_ms}ms"
             if decimal_fit.temporal_evidence:
                 reason += " · 여러 관측의 시간 일치로 검증"
-            same_mode = clock is not None and clock["running"] == bool(decimal_fit.rate)
-            tolerance = max(.12, decimal_fit.uncertainty_ms*2/1000) if decimal_fit.rate else .025
+            if not decimal_fit.rate:
+                return self._hold_confirmed(reading, captured_ms, clock, reason)
+            physical = decimal_fit.seconds
+            seconds = max(0, physical - compensation_seconds)
+            # The authoritative current value is sampled after inference. Local
+            # preview current() above is already in capture-time coordinates.
+            desired_now = max(0, seconds - (age_ms/1000 if current else 0))
+            same_mode = clock is not None and clock["running"]
+            tolerance = max(.12, decimal_fit.uncertainty_ms*2/1000)
             if same_mode and (abs(clock["seconds"]-desired_now) <= tolerance or
-                              (decimal_fit.rate and captured_ms-self.last_decimal_adjust < 400)):
+                              captured_ms-self.last_decimal_adjust < 400):
                 return None, reason + " · 타이머 유지"
-            self.anchor = (seconds, captured_ms, bool(decimal_fit.rate))
+            self.anchor = (seconds, captured_ms, True)
             self.last_decimal_adjust = captured_ms
             # Preserve the existing wire contract (seconds in 100ms buckets),
             # with the fitted fractional offset carried separately.
-            self.sync_seconds = math.ceil(physical*10 - 1e-9)/10 if decimal_fit.rate else round(physical, 1)
-            self.sync_offset_ms = max(0, (self.sync_seconds-physical + compensation_seconds)*1000) if decimal_fit.rate else 0
-            return mode, reason
+            self.sync_seconds = math.ceil(physical*10 - 1e-9)/10
+            self.sync_offset_ms = max(0, (self.sync_seconds-physical + compensation_seconds)*1000)
+            return "run", reason
         # Compare in the physical scoreboard's coordinate system. The web timer
         # is deliberately ahead, so never subtract compensation again on a skip.
         predicted = math.ceil(clock["seconds"] + (compensation_seconds if clock["running"] else 0)) if clock else reading.seconds
@@ -419,8 +432,8 @@ class ClockTracker:
         else:
             return None, "타이머 신뢰 · 오차 1초 이내는 보정하지 않음"
 
-        if mode == "hold" and clock and not clock["running"] and abs(clock["seconds"] - reading.seconds) < .001:
-            return None, reason
-        seconds = max(0, reading.seconds - compensation_seconds - phase_ms / 1000) if mode == "run" else reading.seconds
-        self.anchor = (seconds, captured_ms, mode == "run")
+        if mode == "hold":
+            return self._hold_confirmed(reading, captured_ms, clock, reason)
+        seconds = max(0, reading.seconds - compensation_seconds - phase_ms / 1000)
+        self.anchor = (seconds, captured_ms, True)
         return mode, reason
