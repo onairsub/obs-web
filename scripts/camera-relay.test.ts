@@ -6,7 +6,7 @@ import { once } from "node:events";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import WebSocket from "ws";
-import { HostClocks } from "../src/components/obs/clockSync";
+import { HostClocks, clockValue } from "../src/components/obs/clockSync";
 import { REMOTE_PROTOCOL_VERSION, type RemoteServerMessage } from "../src/components/remote/remoteProtocol";
 
 test("local JPEG → real OCR → Python client → relay → authoritative host", { timeout: 30000 }, async (t) => {
@@ -210,5 +210,22 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   generation = (await json("/api/reacquire", { key: shotKey })).generation;
   assert.equal((await json("/api/status")).clocks[shotKey].confirmed, null);
   assert.equal((await json("/api/status")).clocks[gameKey].confirmed.text, "7:00", "reacquiring one ROI preserves the other clock");
+
+  generation = (await json("/api/settings", { enabled: true, keys: [shotKey, gameKey], mode: "auto" })).generation;
+  for (let i = 0; i < 3; i++) {
+    if (i) await delay(180);
+    assert.equal((await frame(twentyFour, false, generation, shotKey)).sent, i === 2);
+    assert.equal((await frame(minutes, false, generation, gameKey)).sent, i === 2);
+  }
+  for (let i = 0; i < 50 && !host.snapshot().clocks[gameKey].running; i++) await delay(20);
+  const gameRunning = host.snapshot().clocks[gameKey];
+  assert.equal(gameRunning.running, true, "auto mode starts the game clock independently");
+  assert.equal(host.snapshot().clocks[shotKey].running, true);
+  const gameBeforeBlank = clockValue(gameRunning, "down", Date.now());
+  assert.equal((await frame(blank, false, generation, gameKey)).sent, false);
+  await delay(1100);
+  assert.equal((await frame(blank, false, generation, gameKey)).sent, false);
+  assert.deepEqual(host.snapshot().clocks[gameKey], gameRunning, "occlusion does not rewrite or pause the game clock");
+  assert.ok(clockValue(gameRunning, "down", Date.now()) < gameBeforeBlank - 1000, "game clock keeps counting without camera values");
   await json("/api/settings", { enabled: false });
 });

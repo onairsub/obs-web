@@ -110,7 +110,7 @@ test("observation protocol rejects invalid values and unsupported targets", () =
   assert.equal(parse({ ...base, key: "OBS_SOCCER_CLOCK" }), null);
 });
 
-test("camera punctuation and precision survive OBS rendering; manual edits restore normal formatting", () => {
+test("camera punctuation and precision remain available as metadata; manual edits clear it", () => {
   const { host, observe, advance } = fixture();
   for (const [seconds, resolutionMs, format, expected] of [
     [50.1, 100, "seconds", "50.1"], [420, 1000, "minutes", "7:00"],

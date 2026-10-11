@@ -101,3 +101,18 @@ class TrackingTests(unittest.TestCase):
         self.assertTrue(gate.accept(parse_clock('18'), 2080, 2100, tracking=True)[0])
         self.assertFalse(gate.accept(None, 2260, 2280, tracking=True)[0])
         self.assertEqual(gate.confirmed.text, '18')
+
+    def test_game_clock_uses_timer_first_then_stops_and_resumes_from_confirmed_values(self):
+        def see(value, t):
+            return self.see(value, t, shot_clock=False, compensation_seconds=0)
+        self.assertEqual(see('7:00', 1000), 'run')
+        self.assertEqual(self.tracker.current(4000), {'seconds':417, 'running':True})
+        self.assertIsNone(see('6:57', 4000))
+        for t in [4180, 4360, 4540, 4720, 4900, 5080]:
+            self.assertIsNone(see('6:57', t))
+        self.assertEqual(see('6:57', 5260), 'hold')
+        self.assertEqual(self.tracker.current(8000), {'seconds':417, 'running':False})
+        self.assertEqual(see('6:56', 5440), 'run')
+        self.assertEqual(self.tracker.current(7440), {'seconds':414, 'running':True})
+        self.assertEqual(see('50.1', 9000), 'hold')
+        self.assertEqual(self.tracker.current(12000), {'seconds':50.1, 'running':False})

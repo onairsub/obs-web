@@ -26,8 +26,8 @@ function BasketballControls(props: ControllerRenderProps) {
   const [settings] = useLocalStorage<BasketballSettings>("OBS_BASKETBALL_CONFIG", DEFAULT_BASKETBALL_SETTINGS);
   const gameClock = usePersistentClock("OBS_BASKETBALL_GAME_CLOCK", settings.quarterMinutes * 60, "down", 100);
   const shotClock = usePersistentClock("OBS_BASKETBALL_SHOT_CLOCK", settings.shotClockSeconds, "down", 100);
-  const gameClockText = gameClock.observedText ?? formatClock(gameClock.valueMs, true);
-  const shotClockText = shotClock.observedText ?? formatShotClock(shotClock.valueMs);
+  const gameClockText = formatClock(gameClock.valueMs, true);
+  const shotClockText = formatShotClock(shotClock.valueMs);
 
   useEffect(() => { if (connected) { setText("score_A", scores[0]); setText("score_B", scores[1]); } }, [connected, scores, setText]);
   useEffect(() => { if (connected) setText("period", period); }, [connected, period, setText]);

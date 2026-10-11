@@ -7,11 +7,13 @@ let generation = 0, clockOffset = null, inference = null, age = null, sourceEpoc
 const clockKeys=['OBS_BASKETBALL_SHOT_CLOCK','OBS_BASKETBALL_GAME_CLOCK'];
 const suffix=key=>key.includes('SHOT')?'Shot':'Game';
 const label=key=>key.includes('SHOT')?'샷클락':'게임클락';
-function clockText(clock,reading) {
+function clockText(key,clock) {
   if(!clock) return '—';
-  const tenths=reading?.resolution_ms===100,units=Math.ceil(Math.max(0,clock.seconds)*(tenths?10:1));
-  const seconds=tenths?Math.floor(units/10):units,end=tenths?`.${units%10}`:'';
-  return reading?.text.includes(':')?`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}${end}`:`${seconds}${end}`;
+  const seconds=Math.max(0,clock.seconds),shot=key==='OBS_BASKETBALL_SHOT_CLOCK';
+  // Match OBS sport formatting; the confirmed OCR text has its own readout.
+  if(seconds<(shot?5:60)) return (Math.ceil(seconds*10)/10).toFixed(1);
+  const whole=Math.ceil(seconds);
+  return shot?String(whole):`${String(Math.floor(whole/60)).padStart(2,'0')}:${String(whole%60).padStart(2,'0')}`;
 }
 let rois={},roi=null,dragging=null,lastVideoTime=-1,sourceCaptured=0;
 let busy=false,cameraCaptured=null,cameraFrame=0,lastCameraFrame=-1;
@@ -272,7 +274,7 @@ async function statusLoop() {
       $('modelState').textContent=data.model;$('relayState').textContent=data.relay;$('connectionDot').classList.toggle('active',connected);
       for(const key of clockKeys) {
         const state=data.clocks?.[key],current=state?.current||state?.preview,timing=state?.timing;
-        $('webClock'+suffix(key)).textContent=clockText(current,state?.confirmed);
+        $('webClock'+suffix(key)).textContent=clockText(key,current);
         $('webRunning'+suffix(key)).textContent=current?(current.running?'재생 중':'정지'):'대기';
         $('timing'+suffix(key)).textContent=timing?.samples?`초 경계 ${timing.phase_ms}ms · 추정 범위 ±${timing.uncertainty_ms}ms`:'숫자 전환 시각 측정 중';
       }
