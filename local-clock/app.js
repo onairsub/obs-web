@@ -175,7 +175,8 @@ $('cameraStart').onclick = async () => {
       const deviceId=$('device').value;
       media=await navigator.mediaDevices.getUserMedia({audio:false,video:{width:{ideal:1280},height:{ideal:720},...(deviceId?{deviceId:{exact:deviceId}}:{facingMode:'environment'})}});
       video.srcObject=media; await video.play();
-      $('stage').style.aspectRatio=`${video.videoWidth}/${video.videoHeight}`;
+      // Fit the available panel without stretching the image or ROI coordinates.
+      $('stage').style.setProperty('--video-aspect',`${video.videoWidth} / ${video.videoHeight}`);
       video.style.display='block'; display.style.display='none';
       media.getVideoTracks()[0].addEventListener('ended',()=>stopSource().catch(e=>error(e.message)));
       await cameras();
@@ -193,7 +194,7 @@ $('cameraStart').onclick = async () => {
       }
     } else {
       video.style.display='none'; display.style.display='block';
-      display.width=1280;display.height=720;$('stage').style.aspectRatio='16/9';
+      display.width=1280;display.height=720;$('stage').style.setProperty('--video-aspect','16 / 9');
       if (source==='stream') generation=(await post('/api/source',{url:$('streamUrl').value})).generation;
     }
     active=true;$('empty').hidden=true;$('cameraStop').disabled=false;$('sourceState').textContent='드래그하여 인식 영역 선택';
@@ -211,7 +212,7 @@ async function preview(epoch) {
       if ($('source').value==='stream') {
         const response=await api('/api/stream-frame'), frame=await createImageBitmap(await response.blob());
         if (epoch!==sourceEpoch) {frame.close();return;}
-        display.width=frame.width;display.height=frame.height;$('stage').style.aspectRatio=`${frame.width}/${frame.height}`;
+        display.width=frame.width;display.height=frame.height;$('stage').style.setProperty('--video-aspect',`${frame.width} / ${frame.height}`);
         display.getContext('2d').drawImage(frame,0,0);frame.close();sourceCaptured=Number(response.headers.get('X-Captured-Ms'));
       } else if ($('source').value==='demo') {
         const ctx=display.getContext('2d');ctx.fillStyle='#090909';ctx.fillRect(0,0,1280,720);

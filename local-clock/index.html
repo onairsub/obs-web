@@ -1,34 +1,100 @@
 <!doctype html>
 <html lang="ko">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="local-token" content="__LOCAL_TOKEN__"><title>Clock Reader · 로컬 전광판 인식</title><link rel="stylesheet" href="/style.css"></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="local-token" content="__LOCAL_TOKEN__">
+  <title>Clock Reader · 로컬 전광판 인식</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
 <body>
 <main>
-  <header><div><span class="eyebrow">OBS WEB / LOCAL VISION</span><h1>전광판을, 그대로.</h1><p>카메라 속 숫자를 읽어 경기 화면의 시계를 맞춥니다.</p></div><span class="privacy"><i></i> 영상은 이 컴퓨터에서만 처리</span></header>
+  <header>
+    <div class="brand"><span class="eyebrow">OBS WEB / LOCAL VISION</span><h1>전광판을, 그대로.</h1></div>
+    <span class="privacy"><i></i> 영상은 이 컴퓨터에서만 처리</span>
+  </header>
+
+  <section class="connection card" aria-label="웹 세션 연결">
+    <div class="connection-status"><h2><span id="connectionDot" class="dot"></span> 웹 세션 연결</h2><p id="relayState" role="status">공유 링크로 연결하세요.</p></div>
+    <label class="session-field"><span class="sr-only">원격 공유 링크 또는 세션 ID</span><input id="session" autocomplete="off" placeholder="원격 공유 링크 또는 세션 ID 붙여넣기"></label>
+    <button id="connect" class="secondary">세션 연결</button>
+    <details class="connection-options"><summary>서버 주소</summary><div class="popover"><label>중계 서버 주소<input id="origin" type="url" placeholder="https://your-project.vercel.app"></label><p class="hint">공유 링크 없이 세션 ID만 입력할 때 설정하세요.</p></div></details>
+  </section>
+
   <section class="workspace">
-    <div class="viewer card">
-      <div class="section-title"><h2>01 <span>숫자 영역 선택</span></h2><span id="sourceState">카메라 꺼짐</span></div>
-      <div class="two-col"><label>지정할 영역<select id="target"><option value="OBS_BASKETBALL_SHOT_CLOCK">샷클락 영역</option><option value="OBS_BASKETBALL_GAME_CLOCK">게임클락 영역</option></select></label><button id="clearRoi" class="quiet">선택 영역 지우기</button></div><div id="stage"><video id="video" muted playsinline></video><canvas id="display"></canvas><canvas id="selection" aria-label="드래그하여 숫자 영역 선택"></canvas><div id="empty"><strong>전광판을 카메라에 담아주세요</strong><span>카메라를 켠 뒤, 숫자 한 줄만 드래그합니다.</span></div></div>
-      <p class="hint">샷클락과 게임클락을 각각 선택해 드래그하세요. 지정한 두 영역을 동시에 읽습니다. 콜론·소수점은 포함하고 다른 숫자는 제외하세요. 영역을 수정하면 동기화가 멈춥니다.</p>
-      <div class="source-controls"><label>영상 입력<select id="source"><option value="camera">이 컴퓨터의 카메라</option><option value="stream">폰 / IP 카메라 스트림</option><option value="demo">테스트 전광판</option></select></label><label id="deviceField">카메라<select id="device"><option value="">기본 카메라</option></select></label><button id="cameraStart" class="secondary">카메라 켜기</button><button id="cameraStop" class="quiet" disabled>끄기</button></div>
-      <div id="streamField" hidden><label>직접 영상 주소<input id="streamUrl" type="url" placeholder="http://192.168.0.10:8080/video 또는 rtsp://…"></label><p class="hint">일반 웹페이지 주소가 아닌 MJPEG/RTSP 스트림이 필요합니다. 폰을 웹캠으로 연결하면 위 카메라 목록에서도 선택할 수 있습니다.</p></div>
-      <div id="demoField" hidden><div class="two-col"><label>테스트 샷클락<input id="demoText" value="24" maxlength="8"></label><label>테스트 게임클락<input id="demoGame" value="7:00" maxlength="8"></label></div><label class="check"><input id="demoBlank" type="checkbox">숫자 가리기</label></div>
-      <details><summary>영역을 좌표로 입력</summary><div class="coordinates"><label>X %<input id="roiX" type="number" min="0" max="99" value="20"></label><label>Y %<input id="roiY" type="number" min="0" max="99" value="25"></label><label>너비 %<input id="roiW" type="number" min="1" max="100" value="60"></label><label>높이 %<input id="roiH" type="number" min="1" max="100" value="50"></label><button id="applyRoi" class="secondary">적용</button></div></details>
-    </div>
-    <aside>
-      <section class="card"><div class="section-title"><h2>02 <span>웹 세션 연결</span></h2><span id="connectionDot" class="dot"></span></div><label>원격 공유 링크 또는 세션 ID<input id="session" autocomplete="off" placeholder="https://…/obs/remote/…"></label><details><summary>세션 ID만 입력하는 경우</summary><label>중계 서버 주소<input id="origin" type="url" placeholder="https://your-project.vercel.app"></label></details><button id="connect" class="secondary wide">세션 연결</button><p id="relayState" class="hint" role="status">웹에서 원격 컨트롤을 열고 링크를 붙여넣으세요.</p></section>
-      <section class="card"><div class="section-title"><h2>03 <span>인식 & 동기화</span></h2><span id="syncBadge">미리보기</span></div>
-        <h3>샷클락</h3><div class="candidate-readout"><span>현재 인식값 · 검증 전 후보</span><strong id="candidateShot">—</strong><small id="candidateDetailShot">인식 대기</small><p id="candidateStateShot">웹 미반영</p></div><div class="readouts"><div><span>확정 인식값</span><strong id="readingShot">—</strong><small id="confidenceShot">영역 선택 대기</small></div><div><span>웹 / 미리보기 시계</span><strong id="webClockShot">—</strong><small id="webRunningShot">대기</small></div></div><p id="resultShot" class="hint" role="status">영역을 지정하세요.</p><p id="timingShot" class="hint">숫자 전환 시각 측정 중</p>
-        <h3>게임클락</h3><div class="candidate-readout"><span>현재 인식값 · 검증 전 후보</span><strong id="candidateGame">—</strong><small id="candidateDetailGame">인식 대기</small><p id="candidateStateGame">웹 미반영</p></div><div class="readouts"><div><span>확정 인식값</span><strong id="readingGame">—</strong><small id="confidenceGame">영역 선택 대기</small></div><div><span>웹 / 미리보기 시계</span><strong id="webClockGame">—</strong><small id="webRunningGame">대기</small></div></div><p id="resultGame" class="hint" role="status">영역을 지정하세요.</p><p id="timingGame" class="hint">숫자 전환 시각 측정 중</p>
-        <p class="hint">현재 인식값은 동기화가 보류되어도 매 프레임 표시합니다. 확정값·웹 시계와 비교해 소수 구간 전환을 확인하세요.</p><div class="crop-row"><canvas id="crop" width="240" height="80"></canvas><p id="result" role="status">숫자가 보일 때만 반영합니다.</p></div>
-        <p id="rawReading" class="hint" role="status">읽은 후보가 여기에 표시됩니다.</p>
-        <div class="two-col"><label>동작<select id="mode"><option value="auto">타이머 우선 · 자동 보정</option><option value="hold">카메라 값만 표시</option></select></label></div>
+    <section class="viewer card" aria-label="카메라와 숫자 영역">
+      <div class="viewer-heading">
+        <div class="section-title"><h2>01 <span>카메라 & 숫자 영역</span></h2><span id="sourceState">카메라 꺼짐</span></div>
+        <div class="roi-toolbar">
+        <label><span class="sr-only">지정할 영역</span><select id="target"><option value="OBS_BASKETBALL_SHOT_CLOCK">샷클락 영역</option><option value="OBS_BASKETBALL_GAME_CLOCK">게임클락 영역</option></select></label>
+        <button id="clearRoi" class="quiet">영역 지우기</button>
+        </div>
+      </div>
+      <div class="stage-frame">
+        <div id="stage">
+          <video id="video" muted playsinline></video><canvas id="display"></canvas><canvas id="selection" aria-label="드래그하여 숫자 영역 선택"></canvas>
+          <div id="empty"><strong>전광판을 카메라에 담아주세요</strong><span>샷클락과 게임클락 영역을 각각 지정합니다.</span></div>
+        </div>
+      </div>
+      <div class="source-controls">
+        <label>영상 입력<select id="source"><option value="camera">이 컴퓨터의 카메라</option><option value="stream">폰 / IP 카메라 스트림</option><option value="demo">테스트 전광판</option></select></label>
+        <label id="deviceField">카메라<select id="device"><option value="">기본 카메라</option></select></label>
+        <button id="cameraStart" class="secondary">카메라 켜기</button><button id="cameraStop" class="quiet" disabled>끄기</button>
+      </div>
+      <div id="streamField" hidden><label>직접 영상 주소<input id="streamUrl" type="url" placeholder="http://192.168.0.10:8080/video 또는 rtsp://…"></label></div>
+      <div id="demoField" hidden><label>테스트 샷클락<input id="demoText" value="24" maxlength="8"></label><label>테스트 게임클락<input id="demoGame" value="7:00" maxlength="8"></label><label class="check"><input id="demoBlank" type="checkbox">숫자 가리기</label></div>
+      <div class="viewer-bottom">
+        <p class="hint">콜론·소수점까지 포함하세요. 영역 변경 시 동기화가 멈춥니다.</p>
+        <details class="roi-options"><summary>좌표 입력 · 도움말</summary><div class="popover">
+          <div class="coordinates"><label>X %<input id="roiX" type="number" min="0" max="99" value="20"></label><label>Y %<input id="roiY" type="number" min="0" max="99" value="25"></label><label>너비 %<input id="roiW" type="number" min="1" max="100" value="60"></label><label>높이 %<input id="roiH" type="number" min="1" max="100" value="50"></label><button id="applyRoi" class="secondary">적용</button></div>
+          <p class="hint">샷클락과 게임클락을 각각 선택해 드래그하세요. 두 영역을 동시에 읽습니다. 다른 숫자는 영역에서 제외하세요.</p>
+          <p class="hint">폰 스트림에는 일반 웹페이지가 아닌 MJPEG/RTSP 영상 주소가 필요합니다. 폰을 웹캠으로 연결하면 카메라 목록에서 선택할 수 있습니다.</p>
+        </div></details>
+      </div>
+    </section>
+
+    <aside class="sync-panel card" aria-label="인식과 동기화">
+      <div class="section-title"><h2>02 <span>인식 & 동기화</span></h2><span id="syncBadge">미리보기</span></div>
+      <div class="clock-cards">
+        <section class="clock-card shot">
+          <h3><i></i>샷클락</h3>
+          <div class="clock-values">
+            <div class="candidate-readout"><span>현재 인식값</span><strong id="candidateShot">—</strong><small>검증 전 후보</small></div>
+            <div class="readouts"><div><span>확정값</span><strong id="readingShot">—</strong><small id="confidenceShot">영역 선택 대기</small></div><div><span>웹 / 미리보기</span><strong id="webClockShot">—</strong><small id="webRunningShot">대기</small></div></div>
+          </div>
+          <div class="candidate-info"><small id="candidateDetailShot">인식 대기</small><p id="candidateStateShot">웹 미반영</p></div>
+        </section>
+        <section class="clock-card game">
+          <h3><i></i>게임클락</h3>
+          <div class="clock-values">
+            <div class="candidate-readout"><span>현재 인식값</span><strong id="candidateGame">—</strong><small>검증 전 후보</small></div>
+            <div class="readouts"><div><span>확정값</span><strong id="readingGame">—</strong><small id="confidenceGame">영역 선택 대기</small></div><div><span>웹 / 미리보기</span><strong id="webClockGame">—</strong><small id="webRunningGame">대기</small></div></div>
+          </div>
+          <div class="candidate-info"><small id="candidateDetailGame">인식 대기</small><p id="candidateStateGame">웹 미반영</p></div>
+        </section>
+      </div>
+      <div class="sync-controls">
+        <div class="mode-controls"><label>동작<select id="mode"><option value="auto">타이머 우선 · 자동 보정</option><option value="hold">카메라 값만 표시</option></select></label><label>추가 지연 (초)<input id="compensation" type="number" value="0" min="0" max="3" step="0.05"></label></div>
+        <div class="sync-actions"><button id="toggle" class="primary" disabled>동기화 시작</button><button id="reacquire" class="quiet" disabled>선택 시계 다시 맞추기</button></div>
+      </div>
+      <details class="advanced"><summary>인식 설정 · 상세 상태</summary><div class="popover">
+        <div class="two-col"><label>샷클락 최대 (초)<input id="shotMaximum" type="number" value="60" min="1" max="86400"></label><label>게임클락 최대 (초)<input id="gameMaximum" type="number" value="1200" min="1" max="86400"></label><label>최소 신뢰도<input id="threshold" type="number" value="0.85" min="0.5" max="1" step="0.01"></label></div>
+        <label>인식기<select id="reader"><option value="auto">자동 · OCR + 7세그먼트 보조</option><option value="ocr">OCR 모델만</option><option value="segments">7세그먼트만</option></select></label>
+        <label>영상 처리<select id="preprocessing"><option value="auto">자동 · LED 밝기 보정</option><option value="color">원본 색상</option><option value="threshold">흑백 대비 강화</option></select></label>
+        <div class="diagnostics"><h3>샷클락</h3><p id="resultShot" class="hint" role="status">영역을 지정하세요.</p><p id="timingShot" class="hint">숫자 전환 시각 측정 중</p><h3>게임클락</h3><p id="resultGame" class="hint" role="status">영역을 지정하세요.</p><p id="timingGame" class="hint">숫자 전환 시각 측정 중</p></div>
+        <div class="crop-row"><canvas id="crop" width="240" height="80"></canvas><p id="result" role="status">숫자가 보일 때만 반영합니다.</p></div><p id="rawReading" class="hint" role="status">읽은 후보가 여기에 표시됩니다.</p>
+        <p class="hint">현재 인식값은 동기화가 보류되어도 매 프레임 표시합니다. 확정값·웹 시계와 비교해 소수 구간 전환을 확인하세요.</p>
         <p id="modeHint" class="hint">정수는 가려져도 1초씩 흐릅니다. 같은 값이 1.2초 이상 보이면 정지하고, 2초 이상 어긋난 값과 가림 중 샷클락 리셋을 보정합니다. 14·24초 리셋은 정지한 뒤 감소가 확인되면 재생합니다. 소수는 인식값만 표시합니다.</p>
-        <label>추가 영상 지연 (초)<input id="compensation" type="number" value="0" min="0" max="3" step="0.05"></label><p class="hint">초 경계와 촬영 후 처리·통신 시간은 자동 보정합니다. 폰 스트림 등에 남은 고정 지연만 추가하세요. 1을 넣으면 재생 중에만 1초 앞당깁니다. 정지·소수에는 적용하지 않습니다.</p><details><summary>인식 설정</summary><div class="two-col"><label>샷클락 최대 (초)<input id="shotMaximum" type="number" value="60" min="1" max="86400"></label><label>게임클락 최대 (초)<input id="gameMaximum" type="number" value="1200" min="1" max="86400"></label><label>최소 신뢰도<input id="threshold" type="number" value="0.85" min="0.5" max="1" step="0.01"></label></div><label>인식기<select id="reader"><option value="auto">자동 · OCR + 7세그먼트 보조</option><option value="ocr">OCR 모델만</option><option value="segments">7세그먼트만</option></select></label><label>영상 처리<select id="preprocessing"><option value="auto">자동 · LED 밝기 보정</option><option value="color">원본 색상</option><option value="threshold">흑백 대비 강화</option></select></label><p class="hint">7:00 → 420초 · 3:43 → 223초 · 50.1 → 50.1초. 최대값을 초과해도 인식값은 표시하고 전송만 보류합니다.</p></details>
-        <p class="hint">최근 1초 후보를 비교합니다. 샷클락은 0~24초 범위의 점프를 4프레임으로 확인합니다. 가려진 사이 리셋되어 13·12초로 다시 보여도 복구합니다. 소수는 자동 재생 없이 인식된 값만 표시합니다.</p><button id="toggle" class="primary wide" disabled>동기화 시작</button><button id="reacquire" class="quiet wide" disabled>선택한 시계 다시 맞추기</button><p class="hint">수동으로 다른 시간을 설정했다면 다시 맞추기를 누르세요. 새 기준값도 여러 프레임에서 확인합니다.</p>
-      </section>
+        <p class="hint">초 경계와 촬영 후 처리·통신 시간은 자동 보정합니다. 폰 스트림 등에 남은 고정 지연만 추가하세요. 추가 지연에 1을 넣으면 재생 중에만 1초 앞당깁니다. 정지·소수에는 적용하지 않습니다.</p>
+        <p class="hint">7:00 → 420초 · 3:43 → 223초 · 50.1 → 50.1초. 최대값을 초과해도 인식값은 표시하고 전송만 보류합니다.</p>
+        <p class="hint">최근 1초 후보를 비교합니다. 샷클락은 0~24초 범위의 점프를 4프레임으로 확인합니다. 가려진 사이 리셋되어 13·12초로 다시 보여도 복구합니다.</p>
+        <p class="hint">수동으로 다른 시간을 설정했다면 다시 맞추기를 누르세요. 새 기준값도 여러 프레임에서 확인합니다.</p>
+      </div></details>
     </aside>
   </section>
   <footer><span id="modelState">로컬 OCR 준비 중</span><span id="metrics">추론 — ms · 프레임 — ms · 왕복 — ms</span></footer>
   <p id="error" role="alert" hidden></p>
-</main><script src="/app.js" defer></script>
-</body></html>
+</main>
+<script src="/app.js" defer></script>
+</body>
+</html>
