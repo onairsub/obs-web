@@ -57,7 +57,7 @@
       <div class="section-title"><h2>02 <span>인식 & 동기화</span></h2><span id="syncBadge">미리보기</span></div>
       <div class="clock-cards">
         <section class="clock-card shot">
-          <h3><i></i>샷클락</h3>
+          <h3><i></i>샷클락 <span class="format-rule">5초 미만 소수 표시</span></h3>
           <div class="clock-values">
             <div class="candidate-readout"><span>현재 인식값</span><strong id="candidateShot">—</strong><small>검증 전 후보</small></div>
             <div class="readouts"><div><span>확정값</span><strong id="readingShot">—</strong><small id="confidenceShot">영역 선택 대기</small></div><div><span>웹 / 미리보기</span><strong id="webClockShot">—</strong><small id="webRunningShot">대기</small></div></div>
@@ -65,7 +65,7 @@
           <div class="candidate-info"><small id="candidateDetailShot">인식 대기</small><p id="candidateStateShot">웹 미반영</p></div>
         </section>
         <section class="clock-card game">
-          <h3><i></i>게임클락</h3>
+          <h3><i></i>게임클락 <span class="format-rule">1분 미만 소수 표시</span></h3>
           <div class="clock-values">
             <div class="candidate-readout"><span>현재 인식값</span><strong id="candidateGame">—</strong><small>검증 전 후보</small></div>
             <div class="readouts"><div><span>확정값</span><strong id="readingGame">—</strong><small id="confidenceGame">영역 선택 대기</small></div><div><span>웹 / 미리보기</span><strong id="webClockGame">—</strong><small id="webRunningGame">대기</small></div></div>
@@ -95,6 +95,6 @@
   <footer><span id="modelState">로컬 OCR 준비 중</span><span id="metrics">추론 — ms · 프레임 — ms · 왕복 — ms</span></footer>
   <p id="error" role="alert" hidden></p>
 </main>
-<script src="/app.js" defer></script>
+<script src="/app.js" type="module"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@ from benchmark import sample, segment_sample
 from clock_image import find_separators, tight_clock_crop
 from clock_reader import parse_clock
 from ocr import ClockOCR, resolve_readings
+from segments import read_segments
 
 
 class PunctuationTests(unittest.TestCase):
@@ -45,6 +46,27 @@ class ActualModelTests(unittest.TestCase):
                     self.assertIsNotNone(result.reading, result)
                     self.assertEqual(result.reading.text, text)
                     self.assertGreaterEqual(result.reading.confidence, .85)
+
+    def test_printed_five_is_not_vetoed_by_a_false_led_six(self):
+        for scale in [1, .6]:
+            image = cv2.resize(sample('5'), None, fx=scale, fy=scale)
+            image = cv2.imdecode(cv2.imencode('.jpg', image)[1], cv2.IMREAD_COLOR)
+            result = self.engine.read_detailed(image)
+            self.assertIsNotNone(result.reading, result)
+            self.assertEqual(result.reading.text, '5')
+            geometric = read_segments(tight_clock_crop(image))
+            self.assertTrue(geometric is None or geometric.text == '5')
+
+    def test_led_vertical_shape_check_preserves_digits_and_clock_boundaries(self):
+        for text in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '1:00', '59.9', '4.9']:
+            for scale in [1, .6]:
+                with self.subTest(text=text, scale=scale):
+                    image = cv2.resize(segment_sample(text), None, fx=scale, fy=scale)
+                    image = cv2.GaussianBlur(image, (3, 3), .6)
+                    image = cv2.imdecode(cv2.imencode('.jpg', image)[1], cv2.IMREAD_COLOR)
+                    result = read_segments(tight_clock_crop(image))
+                    self.assertIsNotNone(result)
+                    self.assertEqual(result.text, text)
 
     def test_missing_full_line_punctuation_recovered_from_pixels(self):
         original = self.engine._recognize_line

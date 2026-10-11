@@ -99,6 +99,19 @@ test("camera mode can hold at zero and never expires or modifies the other clock
   assert.equal(host.snapshot().clocks[key].baseMs, 0);
 });
 
+test("held observations keep exact tenths and replace an inexact paused value", () => {
+  const { host, observe, advance } = fixture();
+  host.apply(key, { action: "reset", seconds: 16.05, keepRunning: false });
+  for (const seconds of [16.1, 32.2, 32.7]) {
+    advance(100);
+    const state = observe(seconds, { resolutionMs: 100, mode: "hold" })!;
+    assert.equal(state.clocks[key].baseMs, Math.round(seconds * 1000));
+    assert.equal(formatObservedClock(state.clocks[key].baseMs, state.clocks[key].observedDisplay!), String(seconds));
+    advance(100);
+    assert.equal(observe(seconds, { resolutionMs: 100, mode: "hold" })!.revision, state.revision);
+  }
+});
+
 test("observation protocol rejects invalid values and unsupported targets", () => {
   const base = { id: "camera-frame", epoch: "camera-host", issuedAt: 100, key,
     operation: { action: "observe", seconds: 50.1, resolutionMs: 100, capturedAt: 90, mode: "hold" } };

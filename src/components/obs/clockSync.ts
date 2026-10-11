@@ -1,5 +1,6 @@
 // Timer state is written only by the OBS host. Remote devices send operations,
 // never their own remaining time or wall-clock timestamps.
+import { ceilClockUnits } from "../../../shared/clock-format.mjs";
 export const CLOCK_KEYS = ["OBS_SOCCER_CLOCK", "OBS_BASKETBALL_GAME_CLOCK", "OBS_BASKETBALL_SHOT_CLOCK"] as const;
 // Increment when host-side clock semantics change. A new phone must not send
 // commands to an old host that still treats shot-clock zero as a stopped clock.
@@ -56,7 +57,7 @@ export function clockRunning(clock: StoredClock, direction: ClockDirection, now:
 // Camera observations retain the physical display's punctuation and precision,
 // including decimal shot-clock values above the usual five-second threshold.
 export function formatObservedClock(ms: number, display: ClockDisplay) {
-  const units = Math.ceil(Math.max(0, ms) / display.resolutionMs);
+  const units = ceilClockUnits(ms, display.resolutionMs);
   const tenths = display.resolutionMs === 100;
   const totalSeconds = tenths ? Math.floor(units / 10) : units;
   const suffix = tenths ? `.${units % 10}` : "";
@@ -77,12 +78,12 @@ export function changeClock(clock: StoredClock, direction: ClockDirection, opera
     const running = operation.mode === "run" || (operation.mode === "preserve" && wasRunning);
     const age = Math.max(0, now - operation.capturedAt);
     // The observed number is the upper edge of the display's ceil bucket.
-    const baseMs = Math.max(0, operation.seconds * 1000 - (running ? age + (operation.offsetMs ?? 0) : 0));
-    const displayedNow = Math.ceil(value / operation.resolutionMs);
-    const observedNow = Math.ceil(baseMs / operation.resolutionMs);
+    const baseMs = Math.max(0, Math.round(operation.seconds * 1000) - (running ? age + (operation.offsetMs ?? 0) : 0));
+    const displayedNow = ceilClockUnits(value, operation.resolutionMs);
+    const observedNow = ceilClockUnits(baseMs, operation.resolutionMs);
     const observedDisplay: ClockDisplay = { format: operation.format ?? "seconds", resolutionMs: operation.resolutionMs };
     const sameDisplay = clock.observedDisplay?.format === observedDisplay.format && clock.observedDisplay.resolutionMs === observedDisplay.resolutionMs;
-    const samePhase = operation.mode !== "run" || Math.abs(value - baseMs) < 100;
+    const samePhase = operation.mode === "run" ? Math.abs(value - baseMs) < 100 : running || Math.abs(value - baseMs) < .001;
     if (displayedNow === observedNow && running === wasRunning && samePhase) return sameDisplay ? clock : { ...clock, observedDisplay };
     return { running, baseMs, startedAt: running ? now : 0, observedDisplay };
   }

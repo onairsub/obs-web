@@ -59,9 +59,17 @@ def read_segments(image, maximum=86400):
         if not .25 <= w / h <= .85:
             return None
         levels = []
-        for x0, y0, x1, y1 in ZONES:
+        for index, (x0, y0, x1, y1) in enumerate(ZONES):
             zone = glyph[round(y0*h):max(round(y0*h)+1, round(y1*h)), round(x0*w):max(round(x0*w)+1, round(x1*w))]
-            levels.append(float(zone.mean()))
+            level = float(zone.mean())
+            # A printed 5's curved bottom can fill the lower-left zone on
+            # average and masquerade as a 6. Lit LED verticals must extend
+            # along both halves, not only curl into one end of the zone.
+            if index in (1, 2, 4, 5) and level >= .38:
+                halves = [float(part.mean()) for part in np.array_split(zone, 2, axis=0)]
+                if min(halves) < max(.38, max(halves) * .65):
+                    return None
+            levels.append(level)
         if any(.12 < level < .38 for level in levels):
             return None
         signature = ''.join('1' if level >= .38 else '0' for level in levels)

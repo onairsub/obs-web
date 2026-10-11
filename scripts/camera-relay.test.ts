@@ -7,9 +7,10 @@ import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import WebSocket from "ws";
 import { HostClocks, clockValue } from "../src/components/obs/clockSync";
+import { formatClock, formatShotClock } from "../src/components/obs/clockFormat";
 import { REMOTE_PROTOCOL_VERSION, type RemoteServerMessage } from "../src/components/remote/remoteProtocol";
 
-test("local JPEG → real OCR → Python client → relay → authoritative host", { timeout: 30000 }, async (t) => {
+test("local JPEG → real OCR → Python client → relay → authoritative host", { timeout: 60000 }, async (t) => {
   const relay = fork(new URL("./clock-relay-server.ts", import.meta.url), [], {
     execArgv: ["--import", "tsx"], stdio: ["ignore", "ignore", "inherit", "ipc"],
     env: { ...process.env, CLOCK_TEST_REDIS_URL: "" },
@@ -46,6 +47,11 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
     if (!token) await delay(50);
   }
   assert.ok(token, "local server started");
+  for (const path of ["/clock-preview.mjs", "/shared/clock-format.mjs"]) {
+    const response = await fetch(origin + path);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /javascript/);
+  }
   assert.equal((await fetch(`${origin}/api/status`)).status, 403);
   async function json(path: string, body?: unknown) {
     const response = await fetch(origin + path, { headers: { "X-Local-Token": token, "Content-Type": "application/json" },
@@ -240,5 +246,47 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   assert.equal((await frame(blank, false, generation, gameKey)).sent, false);
   assert.deepEqual(host.snapshot().clocks[gameKey], gameRunning, "occlusion does not rewrite or pause the game clock");
   assert.ok(clockValue(gameRunning, "down", Date.now()) < gameBeforeBlank - 1000, "game clock keeps counting without camera values");
-  await json("/api/settings", { enabled: false });
+  // Crossing the display boundary must switch from a running timer to exact
+  // observed decimals, independently for each ROI, with no replay when hidden.
+  for (const [key, integer, decimals] of [
+    [shotKey, "5", ["4.9", "4.7", "4.5"]],
+    [gameKey, "1:00", ["59.9", "59.7", "59.5"]],
+  ] as const) {
+    const images = [integer, ...decimals].map(text => execFileSync(python, ["local-clock/benchmark.py", "--jpeg", text]));
+    generation = (await json("/api/settings", { enabled: true, keys: [key], mode: "auto" })).generation;
+    for (let i = 0; i < 3; i++) {
+      if (i) await delay(180);
+      const result = await frame(images[0], false, generation, key);
+      assert.equal(result.sent, i === 2, `${key} ${integer} frame ${i}: ${JSON.stringify(result)}`);
+    }
+    for (let i = 0; i < 50 && !host.snapshot().clocks[key].running; i++) await delay(20);
+    assert.equal(host.snapshot().clocks[key].running, true);
+    for (let i = 0; i < 3; i++) {
+      await delay(180);
+      const result = await frame(images[i + 1], false, generation, key);
+      assert.equal(result.sent, i === 2, `${key} ${decimals[i]}: ${JSON.stringify(result)}`);
+    }
+    for (let i = 0; i < 50 && host.snapshot().clocks[key].running; i++) await delay(20);
+    const held = host.snapshot().clocks[key];
+    assert.equal(held.running, false);
+    assert.equal(held.baseMs, Number(decimals[2]) * 1000);
+    assert.equal((key === shotKey ? formatShotClock : (ms: number) => formatClock(ms, true))(held.baseMs), decimals[2]);
+    await delay(180);
+    assert.equal((await frame(blank, false, generation, key)).sent, false);
+    assert.deepEqual((await json("/api/status")).clocks[key].preview, { seconds: Number(decimals[2]), running: false });
+    assert.deepEqual(host.snapshot().clocks[key], held);
+  }
+
+  // Hold mode still needs a useful local preview when synchronization is off.
+  generation = (await json("/api/settings", { enabled: false, keys: [shotKey, gameKey], mode: "hold" })).generation;
+  const beforePreview = host.snapshot().revision;
+  for (let i = 0; i < 3; i++) {
+    if (i) await delay(180);
+    assert.equal((await frame(jpg, false, generation, shotKey)).sent, false);
+    assert.equal((await frame(minutes, false, generation, gameKey)).sent, false);
+  }
+  const previewStates = (await json("/api/status")).clocks;
+  assert.deepEqual(previewStates[shotKey].preview, { seconds: 50.1, running: false });
+  assert.deepEqual(previewStates[gameKey].preview, { seconds: 420, running: false });
+  assert.equal(host.snapshot().revision, beforePreview);
 });

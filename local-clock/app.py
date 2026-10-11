@@ -117,6 +117,16 @@ async def stylesheet():
     return Response((ROOT / "style.css").read_text(), media_type="text/css")
 
 
+@app.get("/shared/clock-format.mjs")
+async def clock_format_script():
+    return Response((ROOT.parent / "shared" / "clock-format.mjs").read_text(), media_type="text/javascript")
+
+
+@app.get("/clock-preview.mjs")
+async def clock_preview_script():
+    return Response((ROOT / "clock-preview.mjs").read_text(), media_type="text/javascript")
+
+
 @app.get("/api/status")
 async def status():
     return {"now_ms": now_ms(), "model": model_status, "model_ready": ocr is not None,
@@ -290,6 +300,9 @@ async def recognize(request: Request):
                 reason += f" · 초 경계 {timing['phase_ms']}ms / 추가 {round(settings.compensation_seconds * 1000)}ms"
             elif mode == "hold":
                 phase.reset()
+        elif accepted and mode == "hold":
+            tracker.hold(reading, captured)
+            phase.reset()
         if accepted and armed and mode:
             sent = await relay.observe(reading, captured, key, mode, offset_ms)
             reason += " · 웹 전송" if sent else " · 웹 호스트 연결 대기"

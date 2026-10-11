@@ -174,6 +174,9 @@ class ClockTracker:
         return {"seconds": max(0, seconds - (now_ms - captured) / 1000) if running else seconds,
                 "running": running}
 
+    def hold(self, reading: Reading, captured_ms: float):
+        self.anchor = (reading.seconds, captured_ms, False)
+
     def decide(self, reading: Reading, captured_ms: float, *, current=None,
                shot_clock=True, compensation_seconds=0, phase_ms=0,
                phase_ready=False, uncertainty_ms=0, age_ms=0) -> tuple[str | None, str]:

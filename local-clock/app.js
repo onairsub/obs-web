@@ -1,4 +1,5 @@
 /* Browser camera/ROI input; only cropped frames are sent to the local Python process. */
+import { previewClock } from './clock-preview.mjs';
 const $ = (id) => document.getElementById(id);
 const token = document.querySelector('meta[name="local-token"]').content;
 const video = $('video'), display = $('display'), selection = $('selection'), crop = $('crop');
@@ -8,6 +9,7 @@ const clockKeys=['OBS_BASKETBALL_SHOT_CLOCK','OBS_BASKETBALL_GAME_CLOCK'];
 const suffix=key=>key.includes('SHOT')?'Shot':'Game';
 const label=key=>key.includes('SHOT')?'샷클락':'게임클락';
 const candidateUpdated={};
+let displayClocks={};
 function showCandidate(key,data) {
   const name=suffix(key),reading=data?.reading;
   candidateUpdated[key]=performance.now();
@@ -27,13 +29,13 @@ function clearCandidate(key,message='인식 대기') {
   $('candidate'+name).textContent='—';$('candidateDetail'+name).textContent=message;
   $('candidateState'+name).textContent='웹 미반영';
 }
-function clockText(key,clock) {
-  if(!clock) return '—';
-  const seconds=Math.max(0,clock.seconds),shot=key==='OBS_BASKETBALL_SHOT_CLOCK';
-  // Match OBS sport formatting; the confirmed OCR text has its own readout.
-  if(seconds<(shot?5:60)) return (Math.ceil(seconds*10)/10).toFixed(1);
-  const whole=Math.ceil(seconds);
-  return shot?String(whole):`${String(Math.floor(whole/60)).padStart(2,'0')}:${String(whole%60).padStart(2,'0')}`;
+function renderClocks() {
+  for(const key of clockKeys) {
+    const sample=displayClocks[key];
+    const clock=sample?previewClock(key,sample.clock,sample.at,performance.now()):null;
+    $('webClock'+suffix(key)).textContent=clock?.text||'—';
+    $('webRunning'+suffix(key)).textContent=clock?(clock.running?'재생 중':'정지'):'대기';
+  }
 }
 let rois={},roi=null,dragging=null,lastVideoTime=-1,sourceCaptured=0;
 let busy=false,cameraCaptured=null,cameraFrame=0,lastCameraFrame=-1;
@@ -297,15 +299,16 @@ async function statusLoop() {
       $('modelState').textContent=data.model;$('relayState').textContent=data.relay;$('connectionDot').classList.toggle('active',connected);
       for(const key of clockKeys) {
         const state=data.clocks?.[key],current=state?.current||state?.preview,timing=state?.timing;
-        $('webClock'+suffix(key)).textContent=clockText(key,current);
-        $('webRunning'+suffix(key)).textContent=current?(current.running?'재생 중':'정지'):'대기';
+        displayClocks[key]={clock:current||null,at:data.now_ms-clockOffset};
         $('timing'+suffix(key)).textContent=timing?.samples?`초 경계 ${timing.phase_ms}ms · 추정 범위 ±${timing.uncertainty_ms}ms`:'숫자 전환 시각 측정 중';
         if(candidateUpdated[key]!==undefined && performance.now()-candidateUpdated[key]>1500) clearCandidate(key,'새 프레임 대기 · 확정값은 아래에 유지');
       }
+      renderClocks();
       $('metrics').textContent=`추론 ${inference??'—'} ms · 프레임 ${age??'—'} ms · 왕복 ${data.rtt_ms??'—'} ms`;
       syncUI();
     } catch(e) {
       connected=false;modelReady=false;syncUI();
+      displayClocks={};renderClocks();
       $('relayState').textContent=e.message;$('modelState').textContent='로컬 프로그램 연결 끊김';
       clearReadouts();
       $('result').textContent=e.message;$('rawReading').textContent='연결이 복구되면 다시 인식합니다.';
@@ -314,4 +317,5 @@ async function statusLoop() {
   }
 }
 // A new page always starts disarmed, even after a reload of an armed session.
+setInterval(renderClocks,100);
 (async()=>{try{await configure(false);saveRoi();await cameras();}catch(e){error(e.message);}void statusLoop();void recognizeLoop();})();
