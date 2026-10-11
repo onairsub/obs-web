@@ -39,13 +39,13 @@ class PhaseTests(unittest.TestCase):
 
     def test_phase_correction_refines_a_running_clock_then_avoids_jitter(self):
         tracker = ClockTracker()
-        self.assertEqual(tracker.decide(parse_clock('24'), 1000)[0], 'run')
+        self.assertEqual(tracker.decide(parse_clock('23'), 1000)[0], 'run')
         # Host previously anchored near the far edge of a one-second display bucket.
-        mode, _ = tracker.decide(parse_clock('23'), 1450, current={'seconds':23.8,'running':True},
+        mode, _ = tracker.decide(parse_clock('22'), 1450, current={'seconds':22.8,'running':True},
                                  phase_ms=420, phase_ready=True, uncertainty_ms=60)
         self.assertEqual(mode, 'run')
-        self.assertAlmostEqual(tracker.current(1450)['seconds'], 22.58)
-        self.assertIsNone(tracker.decide(parse_clock('23'), 1630, phase_ms=610,
+        self.assertAlmostEqual(tracker.current(1450)['seconds'], 21.58)
+        self.assertIsNone(tracker.decide(parse_clock('22'), 1630, phase_ms=610,
                                         phase_ready=True, uncertainty_ms=60)[0])
 
     def test_occlusion_discards_phase_even_when_the_same_digit_returns(self):

@@ -195,9 +195,14 @@ class ClockTracker:
                  and (reading.seconds > previous.seconds
                       or (reading.seconds in (14, 24) and (previous.seconds - reading.seconds > 1
                                                           or predicted < reading.seconds - 1))))
+        preset_reset = (shot_integer and reading.seconds in (14, 24)
+                        and (previous is None or previous.resolution_ms == 100 or reset
+                             or (clock and reading.seconds - predicted >= 2)))
 
         if reading.resolution_ms == 100:
             mode, reason = "hold", "소수는 확인된 관찰값만 표시"
+        elif preset_reset:
+            mode, reason = "hold", "14·24초 리셋 확인 · 숫자 감소까지 정지"
         elif previous is None or previous.resolution_ms == 100 or reset:
             mode, reason = "run", "확인된 값에서 타이머 시작" if not reset else "여러 프레임으로 확인한 샷클락 리셋 반영"
         elif stable:

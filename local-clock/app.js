@@ -7,6 +7,26 @@ let generation = 0, clockOffset = null, inference = null, age = null, sourceEpoc
 const clockKeys=['OBS_BASKETBALL_SHOT_CLOCK','OBS_BASKETBALL_GAME_CLOCK'];
 const suffix=key=>key.includes('SHOT')?'Shot':'Game';
 const label=key=>key.includes('SHOT')?'샷클락':'게임클락';
+const candidateUpdated={};
+function showCandidate(key,data) {
+  const name=suffix(key),reading=data?.reading;
+  candidateUpdated[key]=performance.now();
+  $('candidate'+name).textContent=reading?.text||data?.raw_text||'—';
+  const details=[];
+  if(reading) {
+    if(key==='OBS_BASKETBALL_GAME_CLOCK' && reading.seconds<60) details.push('1분 미만');
+    details.push(reading.resolution_ms===100?'소수 인식':reading.text.includes(':')?'분:초 인식':'정수 인식');
+    details.push(`신뢰도 ${Math.round(reading.confidence*100)}%`);
+  } else details.push(data?.raw_text?'시간 형식 확인 안 됨':'인식 안 됨');
+  $('candidateDetail'+name).textContent=details.join(' · ');
+  $('candidateState'+name).textContent=data?.sent?'웹 전송':!data?.accepted?'미반영 · '+(data?.reason||'인식 대기'):!enabled?'미리보기 · 웹 미전송':'웹 타이머 유지';
+}
+function clearCandidate(key,message='인식 대기') {
+  const name=suffix(key);
+  delete candidateUpdated[key];
+  $('candidate'+name).textContent='—';$('candidateDetail'+name).textContent=message;
+  $('candidateState'+name).textContent='웹 미반영';
+}
 function clockText(key,clock) {
   if(!clock) return '—';
   const seconds=Math.max(0,clock.seconds),shot=key==='OBS_BASKETBALL_SHOT_CLOCK';
@@ -27,7 +47,7 @@ try {
 for(const key of clockKeys) if(!validRoi(rois[key])) delete rois[key];
 roi=rois[$('target').value]||null;
 function clearReadouts() {
-  for(const key of clockKeys) { $('reading'+suffix(key)).textContent='—';$('confidence'+suffix(key)).textContent='확정값 확인 중'; }
+  for(const key of clockKeys) { $('reading'+suffix(key)).textContent='—';$('confidence'+suffix(key)).textContent='확정값 확인 중';clearCandidate(key); }
 }
 const error = (message = '') => { $('error').textContent = message; $('error').hidden = !message; };
 async function api(path, options = {}) {
@@ -211,13 +231,14 @@ $('reacquire').onclick=async()=>{
   busy=true;syncUI();
   try {
     generation=(await post('/api/reacquire',{key:$('target').value})).generation;
+    clearCandidate($('target').value,'새 기준값 확인 중');
     $('reading'+suffix($('target').value)).textContent='—';$('confidence'+suffix($('target').value)).textContent='새 기준값 확인 중';
     $('result').textContent='최근 여러 프레임으로 현재 값을 다시 확인합니다.';error();
   } catch(e) {error(e.message);}
   finally {busy=false;syncUI();}
 };
 for(const id of ['mode','compensation','shotMaximum','gameMaximum','threshold','preprocessing','reader']) $(id).onchange=async()=>{
-  $('modeHint').textContent=$('mode').value==='auto'?'정수는 가려져도 1초씩 흐릅니다. 같은 값이 1.2초 이상 보이면 정지하고, 2초 이상 어긋난 값과 가림 중 샷클락 리셋을 보정합니다. 소수는 인식값만 표시합니다.':'확정된 카메라 값만 표시합니다. 가림·오인식 중에는 마지막 값을 유지합니다.';
+  $('modeHint').textContent=$('mode').value==='auto'?'정수는 가려져도 1초씩 흐릅니다. 같은 값이 1.2초 이상 보이면 정지하고, 2초 이상 어긋난 값과 가림 중 샷클락 리셋을 보정합니다. 14·24초 리셋은 정지한 뒤 감소가 확인되면 재생합니다. 소수는 인식값만 표시합니다.':'확정된 카메라 값만 표시합니다. 가림·오인식 중에는 마지막 값을 유지합니다.';
   try{await configure(false);}catch(e){error(e.message);}
 };
 async function recognizeLoop() {
@@ -243,7 +264,7 @@ async function recognizeLoop() {
         for(const key of clockKeys) {
           const r=rois[key];if(!r) continue;
           const sw=Math.round(r.w*w),sh=Math.round(r.h*h),scale=Math.min(1,960/sw,480/sh);
-          if(sw<12 || sh<12) { $('result'+suffix(key)).textContent='영역을 더 크게 선택하세요.';continue; }
+          if(sw<12 || sh<12) { clearCandidate(key,'영역을 더 크게 선택하세요.');$('result'+suffix(key)).textContent='영역을 더 크게 선택하세요.';continue; }
           inputCanvas.width=Math.round(sw*scale);inputCanvas.height=Math.round(sh*scale);
           inputCanvas.getContext('2d').drawImage(snapshotCanvas,r.x*w,r.y*h,sw,sh,0,0,inputCanvas.width,inputCanvas.height);
           if(key===$('target').value) {crop.width=inputCanvas.width;crop.height=inputCanvas.height;crop.getContext('2d').drawImage(inputCanvas,0,0);}
@@ -252,6 +273,7 @@ async function recognizeLoop() {
           if(!blob) throw new Error('카메라 프레임 생성 실패');
           const data=await(await api('/api/frame',{method:'POST',headers:{'Content-Type':'image/jpeg','X-Captured-Ms':String(captured),'X-Generation':String(frameGeneration),'X-Clock-Key':key},body:blob})).json();
           if(frameGeneration!==generation || epoch!==sourceEpoch) break;
+          showCandidate(key,data);
           if('confirmed' in data) $('reading'+suffix(key)).textContent=data.confirmed?.text||'—';
           $('confidence'+suffix(key)).textContent=data.confirmed?(data.accepted?'확인됨':'마지막 확정값'):'여러 프레임 확인 중';
           $('result'+suffix(key)).textContent=data.reason;
@@ -277,6 +299,7 @@ async function statusLoop() {
         $('webClock'+suffix(key)).textContent=clockText(key,current);
         $('webRunning'+suffix(key)).textContent=current?(current.running?'재생 중':'정지'):'대기';
         $('timing'+suffix(key)).textContent=timing?.samples?`초 경계 ${timing.phase_ms}ms · 추정 범위 ±${timing.uncertainty_ms}ms`:'숫자 전환 시각 측정 중';
+        if(candidateUpdated[key]!==undefined && performance.now()-candidateUpdated[key]>1500) clearCandidate(key,'새 프레임 대기 · 확정값은 아래에 유지');
       }
       $('metrics').textContent=`추론 ${inference??'—'} ms · 프레임 ${age??'—'} ms · 왕복 ${data.rtt_ms??'—'} ms`;
       syncUI();

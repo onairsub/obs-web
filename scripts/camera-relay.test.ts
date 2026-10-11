@@ -141,6 +141,7 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   assert.equal(host.snapshot().clocks.OBS_BASKETBALL_GAME_CLOCK.baseMs, 8000);
 
   const twentyFour = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "24"]);
+  const twentyThree = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "23"]);
   generation = (await json("/api/settings", { enabled: true, maximum: 60, mode: "auto", compensation_seconds: 1 })).generation;
   assert.equal((await frame(twentyFour)).sent, false);
   await delay(150);
@@ -148,9 +149,21 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   await delay(150);
   assert.equal((await frame(twentyFour)).sent, true);
   await delay(80);
+  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.running, false, "24s preset waits for an observed decrement");
+  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs, 24000, "no running compensation while reset is held");
+  await delay(1000);
+  assert.equal((await frame(blank)).sent, false);
+  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs, 24000);
+  await delay(180);
+  for (let i = 0; i < 4; i++) {
+    if (i) await delay(180);
+    const result = await frame(twentyThree);
+    assert.equal(result.sent, i === 3, result.reason);
+  }
+  for (let i = 0; i < 50 && !host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.running; i++) await delay(20);
   const running = host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK;
-  assert.equal(running.running, true, "default mode starts the integer clock without a manual Start");
-  assert.ok(running.baseMs <= 23000 && running.baseMs > 22000, "apply one second compensation exactly once, plus frame age");
+  assert.equal(running.running, true, "confirmed 24 to 23 decrement starts the timer");
+  assert.ok(running.baseMs <= 22000 && running.baseMs > 21000, "apply one second compensation exactly once, plus frame age");
   const runningRevision = host.snapshot().revision;
   assert.equal((await frame(blank)).sent, false);
   await delay(1200);
@@ -163,12 +176,12 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   let paused = false;
   for (let i = 0; i < 15 && !paused; i++) {
     await delay(180);
-    await frame(twentyFour);
+    await frame(twentyThree);
     await delay(20);
     paused = !host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.running;
   }
   assert.equal(paused, true);
-  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs, 24000);
+  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs, 23000);
 
   // A hidden 14s reset may first reappear as 13 → 12. Confirm the moving
   // sequence, not just the exact reset digit, then restart the host at that value.
@@ -220,7 +233,7 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   for (let i = 0; i < 50 && !host.snapshot().clocks[gameKey].running; i++) await delay(20);
   const gameRunning = host.snapshot().clocks[gameKey];
   assert.equal(gameRunning.running, true, "auto mode starts the game clock independently");
-  assert.equal(host.snapshot().clocks[shotKey].running, true);
+  assert.equal(host.snapshot().clocks[shotKey].running, false, "shot reset can hold while the game clock runs");
   const gameBeforeBlank = clockValue(gameRunning, "down", Date.now());
   assert.equal((await frame(blank, false, generation, gameKey)).sent, false);
   await delay(1100);
