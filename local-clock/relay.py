@@ -49,6 +49,9 @@ class Relay:
     def ready(self):
         return self.socket is not None and self.offset is not None and now_ms() - self.last_seen < 5000
 
+    def tracking_supported(self):
+        return bool(self.snapshot and self.snapshot.get("trackingVersion") == 2)
+
     async def stop(self):
         self.generation += 1
         if self.task:
@@ -155,8 +158,14 @@ class Relay:
             await asyncio.sleep(delay)
             delay = min(delay * 2, 5)
 
-    async def observe(self, reading: Reading, captured_ms: float, key: str, mode: str):
+    async def observe(self, reading: Reading, captured_ms: float, key: str, mode: str, offset_ms: float = 0):
         if not self.ready():
+            return False
+        # Decimal displays always follow confirmed camera values. Never start or
+        # extrapolate tenths between frames, even if integer preserve was selected.
+        if reading.resolution_ms == 100:
+            mode = "hold"
+        if mode == "run" and not self.tracking_supported():
             return False
         try:
             await self._send({"type": "clock-command", "command": {
@@ -165,7 +174,7 @@ class Relay:
                 "operation": {"action": "observe", "seconds": reading.seconds,
                               "resolutionMs": reading.resolution_ms, "capturedAt": captured_ms + self.offset,
                               "format": "minutes" if ":" in reading.text else "seconds",
-                              "mode": mode}}})
+                              "mode": mode, **({"offsetMs": offset_ms} if mode == "run" else {})}}})
             self.sent += 1
             return True
         except Exception:

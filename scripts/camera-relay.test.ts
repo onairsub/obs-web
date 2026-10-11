@@ -64,10 +64,10 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   const blank = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", ""]);
   const minutes = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "7:00"]);
   let generation = (await json("/api/settings", { enabled: false, maximum: 60 })).generation;
-  async function frame(image = jpg, stale = false, version = generation) {
+  async function frame(image = jpg, stale = false, version = generation, key?: string) {
     const { now_ms } = await json("/api/status");
     const response = await fetch(origin + "/api/frame", { method: "POST", body: image,
-      headers: { "X-Local-Token": token, "Content-Type": "image/jpeg", "X-Captured-Ms": String(now_ms - (stale ? 1500 : 0)), "X-Generation": String(version) } });
+      headers: { "X-Local-Token": token, "Content-Type": "image/jpeg", "X-Captured-Ms": String(now_ms - (stale ? 1500 : 0)), "X-Generation": String(version), ...(key ? { "X-Clock-Key": key } : {}) } });
     assert.equal(response.status, 200, await response.clone().text());
     return response.json();
   }
@@ -75,20 +75,26 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   await delay(100);
   assert.equal((await frame()).sent, false, "preview never writes to host");
   assert.equal(host.snapshot().revision, 0);
-  generation = (await json("/api/settings", { enabled: true, maximum: 60, mode: "hold" })).generation;
+  host.apply("OBS_BASKETBALL_SHOT_CLOCK", { action: "start" });
+  const startedRevision = host.snapshot().revision;
+  generation = (await json("/api/settings", { enabled: true, maximum: 60, mode: "preserve" })).generation;
   assert.equal((await frame()).sent, false, "first read needs confirmation");
   await delay(150);
+  assert.equal((await frame()).sent, false, "two frames cannot establish a new value");
+  await delay(150);
   assert.equal((await frame()).sent, true);
-  for (let i = 0; i < 20 && host.snapshot().revision === 0; i++) await delay(20);
+  for (let i = 0; i < 20 && host.snapshot().revision === startedRevision; i++) await delay(20);
   assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs, 50100);
-  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.running, false);
+  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.running, false, "decimal observations stop playback even in preserve mode");
   assert.deepEqual(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.observedDisplay, { format: "seconds", resolutionMs: 100 });
   const revision = host.snapshot().revision;
   await delay(100);
   assert.equal((await frame()).sent, true);
   await delay(50);
   assert.equal(host.snapshot().revision, revision, "equal observations do not reset the host");
-  assert.equal((await frame(blank)).sent, false);
+  const hidden = await frame(blank);
+  assert.equal(hidden.sent, false);
+  assert.equal(hidden.confirmed.text, "50.1", "occlusion retains the confirmed display without resending");
   assert.equal((await frame(jpg, true)).accepted, false);
   assert.equal((await frame(jpg, false, generation - 1)).accepted, false);
   assert.equal(host.snapshot().revision, revision, "blank/stale/config-changed frames do not write");
@@ -101,12 +107,87 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   assert.match(overLimit.raw_text, /7:00/);
   assert.equal(host.snapshot().revision, revision);
 
-  generation = (await json("/api/settings", { enabled: true, maximum: 1200, key: "OBS_BASKETBALL_GAME_CLOCK" })).generation;
+  generation = (await json("/api/settings", { enabled: true, maximum: 1200, key: "OBS_BASKETBALL_GAME_CLOCK", mode: "hold" })).generation;
+  assert.equal((await frame(minutes)).sent, false);
+  await delay(150);
   assert.equal((await frame(minutes)).sent, false);
   await delay(150);
   assert.equal((await frame(minutes)).sent, true);
   for (let i = 0; i < 20 && host.snapshot().clocks.OBS_BASKETBALL_GAME_CLOCK.baseMs !== 420000; i++) await delay(20);
   assert.equal(host.snapshot().clocks.OBS_BASKETBALL_GAME_CLOCK.baseMs, 420000);
   assert.deepEqual(host.snapshot().clocks.OBS_BASKETBALL_GAME_CLOCK.observedDisplay, { format: "minutes", resolutionMs: 1000 });
+
+  // Real model outliers must not move either the confirmed preview or the host.
+  const wrong = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "8"]);
+  for (let i = 0; i < 4; i++) {
+    await delay(180);
+    const result = await frame(wrong);
+    assert.equal(result.sent, false);
+    assert.equal(result.confirmed.text, "7:00");
+  }
+  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_GAME_CLOCK.baseMs, 420000);
+
+  const oldGeneration = generation;
+  generation = (await json("/api/reacquire", {})).generation;
+  assert.equal((await frame(wrong, false, oldGeneration)).accepted, false);
+  assert.equal((await frame(wrong)).confirmed, null);
+  await delay(150);
+  assert.equal((await frame(wrong)).sent, false);
+  await delay(150);
+  const reacquired = await frame(wrong);
+  assert.equal(reacquired.confirmed.text, "8");
+  assert.equal(reacquired.sent, true, "explicit reacquisition establishes a new multi-frame baseline");
+  for (let i = 0; i < 20 && host.snapshot().clocks.OBS_BASKETBALL_GAME_CLOCK.baseMs !== 8000; i++) await delay(20);
+  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_GAME_CLOCK.baseMs, 8000);
+
+  const twentyFour = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "24"]);
+  generation = (await json("/api/settings", { enabled: true, maximum: 60, mode: "auto", compensation_seconds: 1 })).generation;
+  assert.equal((await frame(twentyFour)).sent, false);
+  await delay(150);
+  assert.equal((await frame(twentyFour)).sent, false);
+  await delay(150);
+  assert.equal((await frame(twentyFour)).sent, true);
+  await delay(80);
+  const running = host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK;
+  assert.equal(running.running, true, "default mode starts the integer clock without a manual Start");
+  assert.ok(running.baseMs <= 23000 && running.baseMs > 22000, "apply one second compensation exactly once, plus frame age");
+  const runningRevision = host.snapshot().revision;
+  assert.equal((await frame(blank)).sent, false);
+  await delay(1200);
+  assert.equal((await frame(blank)).sent, false);
+  assert.equal(host.snapshot().revision, runningRevision, "occlusion does not reanchor the running timer");
+  assert.ok(Date.now() - running.startedAt > 1200);
+
+  // A stationary display must stop the prediction and restore its physical value,
+  // without retaining the one-second running compensation.
+  let paused = false;
+  for (let i = 0; i < 15 && !paused; i++) {
+    await delay(180);
+    await frame(twentyFour);
+    await delay(20);
+    paused = !host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.running;
+  }
+  assert.equal(paused, true);
+  assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs, 24000);
+
+  const shotKey = "OBS_BASKETBALL_SHOT_CLOCK", gameKey = "OBS_BASKETBALL_GAME_CLOCK";
+  generation = (await json("/api/settings", { enabled: true, keys: [shotKey, gameKey], mode: "hold" })).generation;
+  for (let i = 0; i < 3; i++) {
+    if (i) await delay(160);
+    const shotRead = await frame(jpg, false, generation, shotKey);
+    const gameRead = await frame(minutes, false, generation, gameKey);
+    assert.equal(shotRead.sent, i === 2);
+    assert.equal(gameRead.sent, i === 2);
+  }
+  await delay(80);
+  assert.equal(host.snapshot().clocks[shotKey].baseMs, 50100);
+  assert.equal(host.snapshot().clocks[gameKey].baseMs, 420000);
+  assert.equal((await frame(blank, false, generation, shotKey)).confirmed.text, "50.1");
+  const states = (await json("/api/status")).clocks;
+  assert.equal(states[shotKey].confirmed.text, "50.1");
+  assert.equal(states[gameKey].confirmed.text, "7:00");
+  generation = (await json("/api/reacquire", { key: shotKey })).generation;
+  assert.equal((await json("/api/status")).clocks[shotKey].confirmed, null);
+  assert.equal((await json("/api/status")).clocks[gameKey].confirmed.text, "7:00", "reacquiring one ROI preserves the other clock");
   await json("/api/settings", { enabled: false });
 });

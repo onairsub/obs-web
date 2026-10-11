@@ -11,11 +11,12 @@ export type StoredClock = { running: boolean; baseMs: number; startedAt: number;
 export type ClockOperation =
   | { action: "start" }
   | { action: "pause" }
-  | { action: "observe"; seconds: number; resolutionMs: 100 | 1000; capturedAt: number; mode: "preserve" | "hold"; format?: "seconds" | "minutes" }
+  | { action: "observe"; seconds: number; resolutionMs: 100 | 1000; capturedAt: number; mode: "preserve" | "hold" | "run"; format?: "seconds" | "minutes"; offsetMs?: number }
   | { action: "reset" | "adjust"; seconds: number; keepRunning: boolean };
 export type ClockSnapshot = {
   clockVersion?: number; // Absent on legacy hosts; parsed so the UI can explain.
   observationVersion?: number; // Additive capability: older manual remotes still work.
+  trackingVersion?: number; // Explicit support for starting a camera-followed timer.
   epoch: string;
   revision: number;
   hostNow: number;
@@ -73,15 +74,16 @@ export function changeClock(clock: StoredClock, direction: ClockDirection, opera
   }
   if (operation.action === "pause") return { running: false, baseMs: value, startedAt: 0 };
   if (operation.action === "observe") {
-    const running = operation.mode === "preserve" && wasRunning;
+    const running = operation.mode === "run" || (operation.mode === "preserve" && wasRunning);
     const age = Math.max(0, now - operation.capturedAt);
     // The observed number is the upper edge of the display's ceil bucket.
-    const baseMs = Math.max(0, operation.seconds * 1000 - (running ? age : 0));
+    const baseMs = Math.max(0, operation.seconds * 1000 - (running ? age + (operation.offsetMs ?? 0) : 0));
     const displayedNow = Math.ceil(value / operation.resolutionMs);
     const observedNow = Math.ceil(baseMs / operation.resolutionMs);
     const observedDisplay: ClockDisplay = { format: operation.format ?? "seconds", resolutionMs: operation.resolutionMs };
     const sameDisplay = clock.observedDisplay?.format === observedDisplay.format && clock.observedDisplay.resolutionMs === observedDisplay.resolutionMs;
-    if (displayedNow === observedNow && running === wasRunning) return sameDisplay ? clock : { ...clock, observedDisplay };
+    const samePhase = operation.mode !== "run" || Math.abs(value - baseMs) < 100;
+    if (displayedNow === observedNow && running === wasRunning && samePhase) return sameDisplay ? clock : { ...clock, observedDisplay };
     return { running, baseMs, startedAt: running ? now : 0, observedDisplay };
   }
   const baseMs = Math.max(0, (operation.action === "adjust" ? value : 0) + operation.seconds * 1000);
@@ -113,8 +115,9 @@ export function isClockCommand(value: unknown): value is ClockCommand {
   if (op?.action === "observe") {
     return c.key !== "OBS_SOCCER_CLOCK" && Number.isFinite(op.seconds) && op.seconds >= 0 && op.seconds <= 86400
       && (op.resolutionMs === 100 || op.resolutionMs === 1000) && Number.isFinite(op.capturedAt)
-      && (op.mode === "preserve" || op.mode === "hold")
+      && (op.mode === "preserve" || op.mode === "hold" || (op.mode === "run" && op.resolutionMs === 1000))
       && (op.format === undefined || op.format === "seconds" || op.format === "minutes")
+      && (op.offsetMs === undefined || (op.mode === "run" && Number.isFinite(op.offsetMs) && op.offsetMs >= 0 && op.offsetMs <= 5000))
       && Math.abs(op.seconds * 1000 / op.resolutionMs - Math.round(op.seconds * 1000 / op.resolutionMs)) < 0.000001;
   }
   return Boolean(op) && (op.action === "start" || op.action === "pause" || ((op.action === "adjust" || op.action === "reset") && Number.isFinite(op.seconds) && Math.abs(op.seconds) <= 86400 && typeof op.keepRunning === "boolean"));
@@ -141,7 +144,7 @@ export class HostClocks {
   }
 
   snapshot(): ClockSnapshot {
-    return { clockVersion: CLOCK_PROTOCOL_VERSION, observationVersion: 1, epoch: this.epoch, revision: this.revision, hostNow: this.now(), clocks: { ...this.clocks } };
+    return { clockVersion: CLOCK_PROTOCOL_VERSION, observationVersion: 1, trackingVersion: 2, epoch: this.epoch, revision: this.revision, hostNow: this.now(), clocks: { ...this.clocks } };
   }
 
   apply(key: ClockKey, operation: ClockOperation): ClockSnapshot {

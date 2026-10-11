@@ -44,6 +44,37 @@ test("capture-to-host delay is compensated only on a running clock", () => {
   assert.equal(clockValue(host.snapshot().clocks[key], "down", host.now()), 3200);
 });
 
+test("camera run mode starts a stopped integer timer and it keeps counting without observations", () => {
+  const { host, observe, advance } = fixture();
+  assert.equal(host.snapshot().trackingVersion, 2);
+  const capturedAt = host.now();
+  advance(200);
+  const started = observe(23, { capturedAt, mode: "run" })!; // physical 24 minus configured 1s
+  assert.equal(started.clocks[key].running, true);
+  assert.equal(started.clocks[key].baseMs, 22800);
+  advance(3000);
+  assert.equal(clockValue(host.snapshot().clocks[key], "down", host.now()), 19800);
+  assert.equal(observe(4.9, { resolutionMs: 100, mode: "run" }), null, "decimals must never request automatic playback");
+  assert.equal(observe(4.9, { resolutionMs: 100, mode: "hold" })!.clocks[key].baseMs, 4900);
+  advance(2000);
+  assert.equal(clockValue(host.snapshot().clocks[key], "down", host.now()), 4900);
+});
+
+test("measured phase and extra camera delay apply once while preserving integer display precision", () => {
+  const { host, observe, advance } = fixture();
+  const capturedAt = host.now();
+  advance(80);
+  const clock = observe(24, { mode: "run", capturedAt, offsetMs: 1360 })!.clocks[key];
+  assert.equal(clock.baseMs, 22560); // 360ms phase + manual 1s + measured 80ms transport
+  assert.equal(formatObservedClock(clock.baseMs, clock.observedDisplay!), "23");
+  advance(200);
+  const refined = observe(23, { mode: "run", offsetMs: 850 })!.clocks[key];
+  assert.equal(refined.baseMs, 22150, "phase may refine within the same integer bucket");
+  assert.equal(observe(23, { mode: "run", offsetMs: -1 }), null);
+  assert.equal(observe(23, { mode: "run", offsetMs: 5001 }), null);
+  assert.equal(observe(4.9, { resolutionMs: 100, mode: "hold", offsetMs: 100 }), null);
+});
+
 test("old, future, reordered observations and observations predating manual edits are ignored", () => {
   const { host, observe, advance } = fixture();
   assert.equal(observe(14, { capturedAt: host.now() - 1001 }), null);
