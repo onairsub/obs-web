@@ -42,6 +42,8 @@ class ReadingGate:
     display. Reset/recovery paths require more evidence than ordinary countdowns.
     """
     window_ms = 1000
+    game_window_ms = 10000
+    game_reset_seconds = (180, 420)
 
     def __init__(self):
         self.reset()
@@ -52,6 +54,28 @@ class ReadingGate:
         self.confirmed_ms: float | None = None
         self.last_frame_ms: float | None = None
         self.evidence = 0
+        self.game_history: list[Observation] = []
+        self.game_reset_confirmed = False
+
+    def _game_countdown_possible(self, reading, captured_ms):
+        # Checking only the latest accepted value lets repeated one-second
+        # mistakes chain into a clock that runs faster than real time.
+        recent = [x for x in self.game_history if captured_ms - x.captured_ms <= self.game_window_ms]
+        if not recent and self.game_history:
+            recent = self.game_history[-1:]
+        for old in recent:
+            quantum = max(old.reading.resolution_ms, reading.resolution_ms) / 1000
+            if old.reading.seconds - reading.seconds > (captured_ms - old.captured_ms) / 1000 + quantum + .12:
+                return False
+        return True
+
+    def _confirm(self, reading, captured_ms, *, shot_clock, game_reset=False):
+        self.confirmed = reading
+        self.confirmed_ms = captured_ms
+        self.game_reset_confirmed = game_reset
+        if not shot_clock:
+            self.game_history = [] if game_reset else [x for x in self.game_history if captured_ms - x.captured_ms <= self.game_window_ms]
+            self.game_history.append(Observation(reading, captured_ms))
 
     @staticmethod
     def _same_display(a: Reading, b: Reading) -> bool:
@@ -90,6 +114,7 @@ class ReadingGate:
                confidence: float = 0.85, *, shot_clock: bool = True,
                tracking: bool = False) -> tuple[bool, str]:
         self.evidence = 0
+        self.game_reset_confirmed = False
         if not math.isfinite(captured_ms) or not math.isfinite(now_ms) or not -200 <= now_ms - captured_ms <= 900:
             return False, "오래된 프레임은 건너뜀 · 마지막 확정값 유지"
         if self.last_frame_ms is not None and captured_ms - self.last_frame_ms < 40:
@@ -104,21 +129,29 @@ class ReadingGate:
             return False, "가림/낮은 신뢰도 · 마지막 확정값 유지"
 
         required, span_ms, label = 3, 240, "최근 1초 후보 확인"
-        shot_recovery = False
+        shot_recovery = game_reset = False
         if self.confirmed is not None:
             old = self.confirmed
             elapsed = (captured_ms - self.confirmed_ms) / 1000
             delta = old.seconds - reading.seconds
+            game_possible = shot_clock or self._game_countdown_possible(reading, captured_ms)
+            game_reset = (not shot_clock and reading.resolution_ms == 1000
+                          and reading.seconds in self.game_reset_seconds
+                          and (delta < -.001 or not game_possible))
             reset = shot_clock and reading.resolution_ms == 1000 and reading.seconds in (14, 24) and abs(delta) > .001
             shot_recovery = (shot_clock and reading.resolution_ms == 1000 and 0 <= reading.seconds <= 24
                              and (reset or delta < -.001 or elapsed >= 1.2))
-            if shot_recovery:
+            if game_reset:
+                required, span_ms, label = 4, 450, "게임클락 7:00·3:00 리셋 확인"
+            elif not game_possible:
+                return False, "게임클락 실제 경과 시간보다 빠른 감소 보류 · 확정 흐름 유지"
+            elif shot_recovery:
                 required, span_ms, label = 4, 450, "샷클락 리셋/가림 뒤 복구 확인"
             elif delta < -.001:
                 return False, "자동 복구 범위 밖 증가 보류 · 다시 맞추기를 누르세요" if shot_clock else "증가 무시 · 새 경기 시간은 다시 맞추기를 누르세요"
             elif delta > .001:
                 quantum = max(old.resolution_ms, reading.resolution_ms) / 1000
-                correction = tracking and reading.resolution_ms == 1000 and delta > 1.001
+                correction = shot_clock and tracking and reading.resolution_ms == 1000 and delta > 1.001
                 if not correction and delta > elapsed + quantum + .12:
                     return False, "실제 경과 시간보다 빠른 감소 무시"
                 if delta > 1.001:
@@ -129,7 +162,7 @@ class ReadingGate:
                 # Repeated confirmed values cannot shift the clock. A fresh frame
                 # is still required; blank frames never trigger this path.
                 self.evidence = 1
-                self.confirmed_ms = captured_ms
+                self._confirm(reading, captured_ms, shot_clock=shot_clock)
                 return True, "확정값과 같음"
 
         # Only fresh evidence after the last confirmation can justify a jump.
@@ -145,8 +178,7 @@ class ReadingGate:
         total = sum(x.reading.confidence for x in alternatives)
         if support < total * .7:
             return False, "최근 후보가 충돌하여 보류 · 마지막 확정값 유지"
-        self.confirmed = reading
-        self.confirmed_ms = captured_ms
+        self._confirm(reading, captured_ms, shot_clock=shot_clock, game_reset=game_reset)
         return True, f"{label} 완료 · {len(evidence)}프레임 일치"
 
 

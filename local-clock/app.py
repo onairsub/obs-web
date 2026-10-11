@@ -285,6 +285,9 @@ async def recognize(request: Request):
         sent = False
         mode, offset_ms = settings.mode, 0
         if accepted:
+            if gate.game_reset_confirmed:
+                tracker.reset()
+                phase.reset()
             phase.confirm(previous, reading, captured)
         timing = phase.status(captured)
         if accepted and mode == "auto":

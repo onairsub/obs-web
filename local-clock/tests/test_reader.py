@@ -163,6 +163,62 @@ class GateTests(unittest.TestCase):
         self.gate.reset()
         self.confirm("50.1", 2000)
 
+    def test_game_auto_rejects_fast_drop_even_after_repeated_votes(self):
+        self.confirm('6:40', shot_clock=False)
+        for t in [5360, 5540, 5720, 5900]:
+            accepted, reason = self.gate.accept(parse_clock('6:20'), t, t+20, shot_clock=False, tracking=True)
+            self.assertFalse(accepted)
+            self.assertIn('실제 경과 시간', reason)
+        self.assertEqual(self.gate.confirmed.seconds, 400)
+        for t in [6080, 6260, 6440]:
+            self.assertFalse(self.gate.accept(parse_clock('6:36'), t, t+20, shot_clock=False, tracking=True)[0])
+        self.assertTrue(self.gate.accept(parse_clock('6:36'), 6620, 6640, shot_clock=False, tracking=True)[0])
+
+    def test_game_small_errors_cannot_chain_into_an_accelerated_countdown(self):
+        self.confirm('6:40', shot_clock=False)
+        rejected = 0
+        for frame in range(1, 25):
+            t = 1360 + frame * 180
+            text = f'6:{40 - ((frame-1)//3+1):02d}'
+            accepted, _ = self.gate.accept(parse_clock(text), t, t+20, shot_clock=False, tracking=True)
+            rejected += not accepted
+            self.assertLessEqual(400 - self.gate.confirmed.seconds, (t-1360)/1000 + 1.12)
+        self.assertGreater(rejected, 0)
+        self.assertGreaterEqual(self.gate.confirmed.seconds, 395)
+
+    def test_game_reset_presets_need_four_votes_and_start_a_new_time_baseline(self):
+        for initial, preset in [('6:40', '3:00'), ('0:45', '7:00'), ('0:45', '3:00')]:
+            with self.subTest(initial=initial, preset=preset):
+                self.gate.reset()
+                self.confirm(initial, shot_clock=False)
+                for t in [1540, 1720, 1900]:
+                    self.assertFalse(self.gate.accept(parse_clock(preset), t, t+20, shot_clock=False, tracking=True)[0])
+                    self.assertFalse(self.gate.game_reset_confirmed)
+                self.assertTrue(self.gate.accept(parse_clock(preset), 2080, 2100, shot_clock=False, tracking=True)[0])
+                self.assertTrue(self.gate.game_reset_confirmed)
+                next_value = str(int(parse_clock(preset).seconds) - 1)
+                for t in [2800, 2980]:
+                    self.assertFalse(self.gate.accept(parse_clock(next_value), t, t+20, shot_clock=False, tracking=True)[0])
+                self.assertTrue(self.gate.accept(parse_clock(next_value), 3160, 3180, shot_clock=False, tracking=True)[0])
+                self.assertFalse(self.gate.game_reset_confirmed)
+
+    def test_normal_game_countdown_through_three_minutes_is_not_a_reset(self):
+        self.confirm('3:01', shot_clock=False)
+        for t in [2180, 2360]:
+            self.assertFalse(self.gate.accept(parse_clock('3:00'), t, t+20, shot_clock=False, tracking=True)[0])
+        self.assertTrue(self.gate.accept(parse_clock('3:00'), 2540, 2560, shot_clock=False, tracking=True)[0])
+        self.assertFalse(self.gate.game_reset_confirmed)
+
+    def test_game_random_increase_and_one_frame_reset_are_still_rejected(self):
+        self.confirm('0:45', shot_clock=False)
+        for i in range(6):
+            self.assertFalse(self.gate.accept(parse_clock('8:00'), 1540+i*180, 1560+i*180, shot_clock=False, tracking=True)[0])
+        self.assertFalse(self.gate.accept(parse_clock('7:00'), 3000, 3020, shot_clock=False, tracking=True)[0])
+        for t in [3180, 3360, 3540]:
+            self.gate.accept(parse_clock('0:44'), t, t+20, shot_clock=False, tracking=True)
+        self.assertEqual(self.gate.confirmed.seconds, 44)
+        self.assertFalse(self.gate.game_reset_confirmed)
+
 
 if __name__ == "__main__":
     unittest.main()

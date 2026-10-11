@@ -289,4 +289,39 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   assert.deepEqual(previewStates[shotKey].preview, { seconds: 50.1, running: false });
   assert.deepEqual(previewStates[gameKey].preview, { seconds: 420, running: false });
   assert.equal(host.snapshot().revision, beforePreview);
+
+  // Game recognition, not host playback, enforces elapsed-time plausibility.
+  // Exact 7:00 / 3:00 presets are separate four-frame reset exceptions.
+  const gameBaseline = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "6:40"]);
+  const impossibleGame = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "6:20"]);
+  const threeMinutes = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "3:00"]);
+  generation = (await json("/api/settings", { enabled: true, keys: [gameKey], mode: "auto" })).generation;
+  for (let i = 0; i < 3; i++) {
+    if (i) await delay(180);
+    assert.equal((await frame(gameBaseline, false, generation, gameKey)).sent, i === 2);
+  }
+  for (let i = 0; i < 50 && Math.abs(host.snapshot().clocks[gameKey].baseMs - 400000) > 1000; i++) await delay(20);
+  const beforeBadRead = host.snapshot().clocks[gameKey];
+  for (let i = 0; i < 4; i++) {
+    await delay(180);
+    const result = await frame(impossibleGame, false, generation, gameKey);
+    assert.equal(result.reading.text, '6:20', 'raw candidate remains visible');
+    assert.equal(result.accepted, false);
+    assert.equal(result.sent, false);
+    assert.equal(result.confirmed.text, '6:40');
+    assert.match(result.reason, /실제 경과 시간/);
+  }
+  assert.deepEqual(host.snapshot().clocks[gameKey], beforeBadRead, 'rejecting OCR does not pause or rewrite the host timer');
+  for (const [image, expectedMs] of [[threeMinutes, 180000], [minutes, 420000]] as const) {
+    for (let i = 0; i < 4; i++) {
+      await delay(180);
+      const result = await frame(image, false, generation, gameKey);
+      assert.equal(result.sent, i === 3, JSON.stringify(result));
+    }
+    for (let i = 0; i < 50 && Math.abs(host.snapshot().clocks[gameKey].baseMs - expectedMs) > 1000; i++) await delay(20);
+    const reset = host.snapshot().clocks[gameKey];
+    assert.ok(reset.baseMs <= expectedMs && reset.baseMs > expectedMs - 1000);
+    assert.equal(reset.running, true, 'a confirmed new game baseline retains auto-mode start behavior');
+  }
+  await json("/api/settings", { enabled: false });
 });
