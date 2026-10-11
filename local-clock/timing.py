@@ -13,6 +13,10 @@ class ClockPhase:
         self.uncertainty_ms = None
 
     def observe(self, reading, captured_ms):
+        if self.samples and captured_ms - self.samples[-1][1] > 1000:
+            # A reset or pause may have occurred while hidden. Relearn the phase
+            # rather than applying a pre-occlusion boundary to the recovered clock.
+            self.reset()
         self.samples = [(r, t) for r, t in self.samples if captured_ms - t <= 1600]
         if reading is not None and (not self.samples or captured_ms > self.samples[-1][1]):
             self.samples.append((reading, captured_ms))

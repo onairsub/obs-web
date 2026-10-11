@@ -65,13 +65,15 @@ class ReadingGate:
         quantum = max(a.reading.resolution_ms, b.reading.resolution_ms) / 1000
         return elapsed >= .04 and -.001 <= delta <= elapsed + quantum + .12
 
-    def _path(self, current: Observation) -> list[Observation]:
-        # Integer evidence is an actual repeated value. Decimal values change on
-        # each frame, so find the strongest monotone, time-consistent trajectory.
+    def _path(self, current: Observation, *, shot_recovery=False) -> list[Observation]:
+        # A reset may already be counting down when it reappears. For that path,
+        # as for decimals, corroborate a time-consistent sequence across digits.
         samples = [x for x in self.history if x.reading is not None
                    and x.reading.resolution_ms == current.reading.resolution_ms
-                   and (":" in x.reading.text) == (":" in current.reading.text)]
-        if current.reading.resolution_ms == 1000:
+                   and (":" in x.reading.text) == (":" in current.reading.text)
+                   and (not shot_recovery or 0 <= x.reading.seconds <= 24)
+                   and (self.confirmed is None or x.captured_ms > self.confirmed_ms)]
+        if current.reading.resolution_ms == 1000 and not shot_recovery:
             return [x for x in samples if self._same_display(x.reading, current.reading)]
         # Rechecking every earlier point prevents chaining many individually
         # plausible drops into an impossibly fast countdown.
@@ -102,15 +104,18 @@ class ReadingGate:
             return False, "가림/낮은 신뢰도 · 마지막 확정값 유지"
 
         required, span_ms, label = 3, 240, "최근 1초 후보 확인"
+        shot_recovery = False
         if self.confirmed is not None:
             old = self.confirmed
             elapsed = (captured_ms - self.confirmed_ms) / 1000
             delta = old.seconds - reading.seconds
             reset = shot_clock and reading.resolution_ms == 1000 and reading.seconds in (14, 24) and abs(delta) > .001
-            if reset:
-                required, span_ms, label = 4, 450, f"{reading.seconds:g}초 리셋 확인"
+            shot_recovery = (shot_clock and reading.resolution_ms == 1000 and 0 <= reading.seconds <= 24
+                             and (reset or delta < -.001 or elapsed >= 1.2))
+            if shot_recovery:
+                required, span_ms, label = 4, 450, "샷클락 리셋/가림 뒤 복구 확인"
             elif delta < -.001:
-                return False, "증가/임의 점프 무시 · 샷클락은 14·24초 리셋만 허용" if shot_clock else "증가 무시 · 새 경기 시간은 다시 맞추기를 누르세요"
+                return False, "자동 복구 범위 밖 증가 보류 · 다시 맞추기를 누르세요" if shot_clock else "증가 무시 · 새 경기 시간은 다시 맞추기를 누르세요"
             elif delta > .001:
                 quantum = max(old.resolution_ms, reading.resolution_ms) / 1000
                 correction = tracking and reading.resolution_ms == 1000 and delta > 1.001
@@ -127,11 +132,8 @@ class ReadingGate:
                 self.confirmed_ms = captured_ms
                 return True, "확정값과 같음"
 
-        path = self._path(current)
-        # Evidence predating the last confirmed different value must not vote for
-        # a later jump (e.g. 24 → 23 → an isolated erroneous 24).
-        if self.confirmed and not self._same_display(self.confirmed, reading):
-            path = [x for x in path if x.captured_ms > self.confirmed_ms]
+        # Only fresh evidence after the last confirmation can justify a jump.
+        path = self._path(current, shot_recovery=shot_recovery)
         self.evidence = len(path)
         if len(path) < required or captured_ms - path[0].captured_ms < span_ms:
             return False, f"{label} · {min(len(path), required)}/{required}프레임"
@@ -187,17 +189,21 @@ class ClockTracker:
         stable = captured_ms - self.stable_since >= 1200
         desired = max(0, reading.seconds - compensation_seconds - phase_ms / 1000 - age_ms / 1000)
         phase_error = abs(clock["seconds"] - desired) if clock else 0
+        shot_integer = shot_clock and reading.resolution_ms == 1000 and 0 <= reading.seconds <= 24
         reset = (shot_clock and previous is not None and not same
-                 and reading.resolution_ms == 1000 and reading.seconds in (14, 24)
-                 and (reading.seconds > previous.seconds or previous.seconds - reading.seconds > 1
-                      or predicted < reading.seconds - 1))
+                 and shot_integer
+                 and (reading.seconds > previous.seconds
+                      or (reading.seconds in (14, 24) and (previous.seconds - reading.seconds > 1
+                                                          or predicted < reading.seconds - 1))))
 
         if reading.resolution_ms == 100:
             mode, reason = "hold", "소수는 확인된 관찰값만 표시"
         elif previous is None or previous.resolution_ms == 100 or reset:
-            mode, reason = "run", "확인된 값에서 타이머 시작" if not reset else "14·24초 리셋 반영"
+            mode, reason = "run", "확인된 값에서 타이머 시작" if not reset else "여러 프레임으로 확인한 샷클락 리셋 반영"
         elif stable:
             mode, reason = "hold", "같은 값이 1.2초 이상 보여 정지로 판단"
+        elif shot_integer and clock and reading.seconds - predicted >= 2:
+            mode, reason = "run", "가림 중 리셋/정지로 뒤처진 샷클락 복구"
         elif clock and not clock["running"] and reading.seconds < previous.seconds:
             mode, reason = "run", "숫자 감소가 확인되어 타이머 재개"
         elif predicted - reading.seconds >= 2:

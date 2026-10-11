@@ -41,8 +41,29 @@ class TrackingTests(unittest.TestCase):
 
     def test_no_visibility_does_not_count_as_stationary_evidence(self):
         self.see('20', 1000)
-        self.assertIsNone(self.see('20', 4000))
+        self.assertEqual(self.see('20', 4000), 'run')
+        self.assertEqual(self.tracker.current(4000)['seconds'], 19)
         self.assertTrue(self.tracker.current(4000)['running'])
+
+    def test_hidden_reset_recovers_even_below_the_last_seen_value(self):
+        # Last seen 20, hidden for 12s, reset to 14, and reappears at 13/12.
+        # It is below 20 but above the prediction, so lower-only correction fails.
+        gate = ReadingGate()
+        for value, t in [('20', 1000), ('20', 1180), ('20', 1360)]:
+            if gate.accept(parse_clock(value), t, t+20, tracking=True)[0]:
+                self.see(value, t)
+        self.assertAlmostEqual(self.tracker.current(13000)['seconds'], 7.36)
+        for value, t in [('', 3000), ('', 11000), ('13', 13000), ('13', 13180), ('12', 13360)]:
+            self.assertFalse(gate.accept(parse_clock(value), t, t+20, tracking=True)[0])
+        self.assertTrue(gate.accept(parse_clock('12'), 13540, 13560, tracking=True)[0])
+        self.assertEqual(self.see('12', 13540), 'run')
+        self.assertEqual(self.tracker.current(13540)['seconds'], 11)
+        self.assertIsNone(self.see('12', 13720))
+
+    def test_confirmed_upward_recovery_restarts_a_stopped_shot_clock(self):
+        self.see('8', 1000)
+        self.assertEqual(self.see('13', 3000, current={'seconds':8, 'running':False}), 'run')
+        self.assertEqual(self.tracker.current(3000), {'seconds':12, 'running':True})
 
     def test_decimals_never_run_or_apply_one_second_compensation(self):
         self.see('5', 1000)

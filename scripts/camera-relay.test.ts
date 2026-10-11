@@ -170,6 +170,27 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
   assert.equal(paused, true);
   assert.equal(host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs, 24000);
 
+  // A hidden 14s reset may first reappear as 13 → 12. Confirm the moving
+  // sequence, not just the exact reset digit, then restart the host at that value.
+  const thirteen = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "13"]);
+  const twelve = execFileSync(python, ["local-clock/benchmark.py", "--jpeg", "12"]);
+  generation = (await json("/api/reacquire", { key: "OBS_BASKETBALL_SHOT_CLOCK" })).generation;
+  for (let i = 0; i < 3; i++) {
+    if (i) await delay(180);
+    assert.equal((await frame(wrong)).sent, i === 2); // establish 8s
+  }
+  assert.equal((await frame(blank)).sent, false);
+  await delay(1250);
+  for (let i = 0; i < 4; i++) {
+    if (i) await delay(180);
+    const result = await frame(i < 2 ? thirteen : twelve);
+    assert.equal(result.sent, i === 3, "hidden reset still requires four corroborating frames");
+  }
+  for (let i = 0; i < 50 && host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK.baseMs < 10000; i++) await delay(20);
+  const recovered = host.snapshot().clocks.OBS_BASKETBALL_SHOT_CLOCK;
+  assert.equal(recovered.running, true);
+  assert.ok(recovered.baseMs > 10000 && recovered.baseMs <= 11000, "recover to 12s with the configured 1s compensation");
+
   const shotKey = "OBS_BASKETBALL_SHOT_CLOCK", gameKey = "OBS_BASKETBALL_GAME_CLOCK";
   generation = (await json("/api/settings", { enabled: true, keys: [shotKey, gameKey], mode: "hold" })).generation;
   for (let i = 0; i < 3; i++) {

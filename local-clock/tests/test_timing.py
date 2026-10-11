@@ -48,6 +48,17 @@ class PhaseTests(unittest.TestCase):
         self.assertIsNone(tracker.decide(parse_clock('23'), 1630, phase_ms=610,
                                         phase_ready=True, uncertainty_ms=60)[0])
 
+    def test_occlusion_discards_phase_even_when_the_same_digit_returns(self):
+        phase = ClockPhase()
+        phase.observe(parse_clock('14'), 1000)
+        phase.observe(parse_clock('13'), 1180)
+        phase.confirm(parse_clock('14'), parse_clock('13'), 1540)
+        self.assertEqual(phase.status(1540)['samples'], 1)
+        phase.observe(None, 3000)
+        phase.observe(parse_clock('13'), 3200)
+        phase.confirm(parse_clock('13'), parse_clock('13'), 3740)
+        self.assertEqual(phase.status(3740)['samples'], 0)
+
     def test_two_clocks_have_independent_motion_and_phase(self):
         shot, game = ClockTracker(), ClockTracker()
         shot.decide(parse_clock('24'), 1000)

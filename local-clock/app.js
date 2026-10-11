@@ -215,7 +215,7 @@ $('reacquire').onclick=async()=>{
   finally {busy=false;syncUI();}
 };
 for(const id of ['mode','compensation','shotMaximum','gameMaximum','threshold','preprocessing','reader']) $(id).onchange=async()=>{
-  $('modeHint').textContent=$('mode').value==='auto'?'정수는 가려져도 1초씩 흐릅니다. 같은 값이 1.2초 이상 보이면 정지하고, 2초 이상 뒤처진 관찰값과 14·24 리셋을 보정합니다. 소수는 인식값만 표시합니다.':'확정된 카메라 값만 표시합니다. 가림·오인식 중에는 마지막 값을 유지합니다.';
+  $('modeHint').textContent=$('mode').value==='auto'?'정수는 가려져도 1초씩 흐릅니다. 같은 값이 1.2초 이상 보이면 정지하고, 2초 이상 어긋난 값과 가림 중 샷클락 리셋을 보정합니다. 소수는 인식값만 표시합니다.':'확정된 카메라 값만 표시합니다. 가림·오인식 중에는 마지막 값을 유지합니다.';
   try{await configure(false);}catch(e){error(e.message);}
 };
 async function recognizeLoop() {

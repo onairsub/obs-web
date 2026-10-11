@@ -59,20 +59,46 @@ class GateTests(unittest.TestCase):
         self.assertFalse(self.push("24", 2260))
         self.assertEqual(self.gate.confirmed.text, "20")
 
-    def test_only_14_and_24_allow_upward_resets_with_four_votes(self):
+    def test_shot_reset_can_reappear_below_14_or_24_with_four_votes(self):
         self.confirm("8")
+        self.confirm("13", 1540, count=4)
+        self.confirm("18", 2500, count=4)
+        self.confirm("24", 3400, count=4)
+        self.confirm("14", 4300, count=4)
+
+    def test_reset_evidence_can_cross_a_second_boundary(self):
+        self.confirm("8")
+        self.push("", 1540)
+        for value, t in [("13", 2500), ("13", 2680), ("12", 2860)]:
+            self.assertFalse(self.push(value, t))
+        self.assertTrue(self.push("12", 3040))
+        self.assertEqual(self.gate.confirmed.seconds, 12)
+
+    def test_relaxed_reset_still_rejects_outliers_conflicts_and_values_above_24(self):
+        self.confirm("8")
+        for value, t in [("13", 1540), ("13", 1720), ("8", 1900),
+                         ("13", 2080), ("21", 2260), ("13", 2440),
+                         ("21", 2620), ("13", 2800), ("13", 2980)]:
+            accepted = self.push(value, t)
+            if value != "8":
+                self.assertFalse(accepted)
+            self.assertEqual(self.gate.confirmed.seconds, 8)
         for i in range(6):
-            self.assertFalse(self.push("18", 1540 + i * 180))
-        self.assertEqual(self.gate.confirmed.text, "8")
-        self.confirm("24", 3000, count=4)
-        self.confirm("14", 3900, count=4)
+            self.assertFalse(self.push("28", 3200 + i * 180))
+        self.assertEqual(self.gate.confirmed.seconds, 8)
+
+    def test_game_clock_does_not_inherit_relaxed_shot_reset(self):
+        self.confirm("8", shot_clock=False)
+        for i in range(6):
+            self.assertFalse(self.push("13", 2500 + i * 180, shot_clock=False))
+        self.assertEqual(self.gate.confirmed.seconds, 8)
 
     def test_blank_low_confidence_and_outliers_hold_value_without_replay(self):
         self.confirm("20")
         for value, t, confidence in [("", 1540, 1), ("19", 1720, .5), ("2", 1900, 1), ("", 2080, 1)]:
             self.assertFalse(self.push(value, t, confidence))
             self.assertEqual(self.gate.confirmed.text, "20")
-        self.confirm("20", 2440)
+        self.confirm("20", 2440, count=4)
 
     def test_recovery_after_occlusion_requires_time_and_four_consistent_frames(self):
         self.confirm("20")
