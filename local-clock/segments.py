@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 
 from clock_reader import parse_clock
+from clock_image import connected_components
 
 PATTERNS = {"1110111": "0", "0010010": "1", "1011101": "2", "1011011": "3",
             "0111010": "4", "1101011": "5", "1101111": "6", "1010010": "7",
@@ -39,17 +40,26 @@ def read_segments(image, maximum=86400):
         nonzero = cv2.findNonZero(part)
         x, y, w, h = cv2.boundingRect(nonzero)
         glyph = part[y:y+h, x:x+w] / 255
-        if h < height * .65:
-            n, _, stats, centers = cv2.connectedComponentsWithStats((glyph * 255).astype(np.uint8))
+        # A tall colon with two square dots can cover ~70% of digit height.
+        # Classify those dots before digit zones, otherwise they resemble 0.
+        if h < height * .65 or (h < height * .9 and w < height * .28):
+            _, _, stats, centers = connected_components((glyph * 255).astype(np.uint8))
             components = [(s, c) for s, c in zip(stats[1:], centers[1:]) if s[4] >= 3]
+            punctuation = None
             if len(components) == 1 and y > top + height * .72 and h < height * .2:
-                result.append(".")
-            elif len(components) == 2 and h > height * .2 and abs(components[0][1][0] - components[1][1][0]) < height * .1:
-                result.append(":")
-            else:
+                punctuation = "."
+            elif (len(components) == 2 and h > height * .2
+                  and all(s[2] <= height*.28 and s[3] <= height*.28 and .4 <= s[2]/s[3] <= 2.5 for s, _ in components)
+                  and abs(components[0][1][0] - components[1][1][0]) < height * .1):
+                punctuation = ":"
+            if punctuation:
+                result.append(punctuation)
+                confidences.append(.96)
+                continue
+            if h < height * .65:
                 return None
-            confidences.append(.96)
-            continue
+            # A narrow full-height LED 1 also has two components, but they
+            # are long vertical bars. Let the digit check handle it.
         if w / h < .22 and h > height * .72:
             # A one is two aligned vertical segments; reject sparsely lit noise.
             if np.mean(glyph) < .55:

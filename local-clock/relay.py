@@ -52,6 +52,9 @@ class Relay:
     def tracking_supported(self):
         return bool(self.snapshot and self.snapshot.get("trackingVersion") == 2)
 
+    def decimal_tracking_supported(self):
+        return bool(self.snapshot and self.snapshot.get("decimalTrackingVersion") == 1)
+
     async def stop(self):
         self.generation += 1
         if self.task:
@@ -158,13 +161,35 @@ class Relay:
             await asyncio.sleep(delay)
             delay = min(delay * 2, 5)
 
-    async def observe(self, reading: Reading, captured_ms: float, key: str, mode: str, offset_ms: float = 0):
+    async def set_value(self, reading: Reading, key: str, *, keep_running: bool):
         if not self.ready():
             return False
-        # Decimal displays always follow confirmed camera values. Never start or
-        # extrapolate tenths between frames, even if integer preserve was selected.
-        if reading.resolution_ms == 100:
+        try:
+            await self._send({"type": "clock-command", "command": {
+                "id": str(uuid.uuid4()), "epoch": self.snapshot["epoch"],
+                "issuedAt": now_ms() + self.offset, "key": key,
+                "operation": {"action": "reset", "seconds": reading.seconds, "keepRunning": keep_running}}})
+            self.sent += 1
+            return True
+        except Exception:
+            return False
+
+    async def observe(self, reading: Reading, captured_ms: float, key: str, mode: str, offset_ms: float = 0,
+                      *, shot_low_sync=False, game_low_sync=True):
+        if not self.ready():
+            return False
+        # Disabled low-time synchronization leaves playback to the host timer,
+        # regardless of the selected mode or whether OCR read a decimal.
+        if key == "OBS_BASKETBALL_SHOT_CLOCK" and reading.seconds <= 5 and not shot_low_sync:
+            return False
+        if key == "OBS_BASKETBALL_GAME_CLOCK" and reading.seconds < 60 and not game_low_sync:
+            return False
+        # Explicit camera-only/preserve modes retain observed decimals. Auto
+        # mode may run them only after a fitted trajectory and host negotiation.
+        if reading.resolution_ms == 100 and mode != "run":
             mode = "hold"
+        if reading.resolution_ms == 100 and mode == "run" and not self.decimal_tracking_supported():
+            return False
         if mode == "run" and not self.tracking_supported():
             return False
         try:

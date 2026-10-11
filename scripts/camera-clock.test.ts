@@ -54,10 +54,27 @@ test("camera run mode starts a stopped integer timer and it keeps counting witho
   assert.equal(started.clocks[key].baseMs, 22800);
   advance(3000);
   assert.equal(clockValue(host.snapshot().clocks[key], "down", host.now()), 19800);
-  assert.equal(observe(4.9, { resolutionMs: 100, mode: "run" }), null, "decimals must never request automatic playback");
+  assert.equal(host.snapshot().decimalTrackingVersion, 1);
+  assert.equal(observe(4.9, { resolutionMs: 100, mode: "run" })!.clocks[key].running, true);
+  advance(180);
   assert.equal(observe(4.9, { resolutionMs: 100, mode: "hold" })!.clocks[key].baseMs, 4900);
   advance(2000);
   assert.equal(clockValue(host.snapshot().clocks[key], "down", host.now()), 4900);
+});
+
+test("a fitted decimal line applies fractional offset and capture age once, then pauses exactly", () => {
+  const { host, observe, advance } = fixture();
+  const capturedAt = host.now();
+  advance(80);
+  const clock = observe(8.5, { resolutionMs: 100, mode: 'run', capturedAt, offsetMs: 330 })!.clocks[key];
+  assert.equal(clock.baseMs, 8090); // fitted 8.47 - extra .3 - frame age .08
+  advance(400);
+  assert.equal(clockValue(clock, 'down', host.now()), 7690);
+  const stopped = observe(8.1, { resolutionMs: 100, mode: 'hold' })!.clocks[key];
+  assert.equal(stopped.baseMs,8100);
+  assert.equal(stopped.running,false);
+  advance(2000);
+  assert.equal(clockValue(stopped,'down',host.now()),8100);
 });
 
 test("measured phase and extra camera delay apply once while preserving integer display precision", () => {

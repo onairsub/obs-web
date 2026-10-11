@@ -1,7 +1,8 @@
 import argparse
 import asyncio
+import faulthandler
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import io
 import math
 from pathlib import Path
@@ -16,7 +17,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 import uvicorn
 
-from clock_reader import ClockTracker, ReadingGate
+from clock_reader import ClockTracker, ReadingGate, format_confirmed_reading, parse_clock
 from ocr import ClockOCR
 from relay import Relay, now_ms
 from stream import StreamCamera
@@ -30,6 +31,11 @@ CLOCK_KEYS = ("OBS_BASKETBALL_SHOT_CLOCK", "OBS_BASKETBALL_GAME_CLOCK")
 gates = {key: ReadingGate() for key in CLOCK_KEYS}
 trackers = {key: ClockTracker() for key in CLOCK_KEYS}
 phases = {key: ClockPhase() for key in CLOCK_KEYS}
+
+
+def confirmed_reading(key):
+    return format_confirmed_reading(gates[key].confirmed,
+                                    shot_clock=key == "OBS_BASKETBALL_SHOT_CLOCK")
 
 
 def reset_channels(keys=None):
@@ -52,6 +58,8 @@ class Settings(BaseModel):
     shot_maximum: float = Field(default=60, ge=1, le=86400)
     game_maximum: float = Field(default=1200, ge=1, le=86400)
     mode: Literal["auto", "preserve", "hold"] = "auto"
+    shot_low_sync: bool = False
+    game_low_sync: bool = True
     compensation_seconds: float = Field(default=0, ge=0, le=3)
     minimum_confidence: float = Field(default=0.85, ge=0.5, le=1)
     maximum: float = Field(default=60, ge=1, le=86400)
@@ -133,7 +141,8 @@ async def status():
             "relay": relay.status, "connected": relay.ready(), "rtt_ms": relay.rtt_ms,
             "current": relay.current(settings.key), "sent": relay.sent,
             "clocks": {key: {"current": relay.current(key), "preview": trackers[key].current(now_ms()),
-                              "confirmed": asdict(gates[key].confirmed) if gates[key].confirmed else None,
+                              "confirmed": asdict(confirmed_reading(key)) if gates[key].confirmed else None,
+                              "trajectory": gates[key].trajectory.status(),
                               "timing": phases[key].status(now_ms())} for key in CLOCK_KEYS},
             "stream": camera.status if camera else None, "generation": generation,
             "settings": settings.model_dump()}
@@ -181,6 +190,46 @@ async def reacquire(body: Reacquire):
     generation += 1
     reset_channels([body.key] if body.key else None)
     return {"generation": generation}
+
+
+class ManualApply(BaseModel):
+    key: ClockKey
+    value: str = Field(min_length=1, max_length=16)
+    generation: int
+
+
+@app.post("/api/apply")
+async def apply_reading(body: ManualApply):
+    """An explicit click sets exactly the displayed value, independent of OCR gates."""
+    global generation, gate_relay_generation
+    if body.generation != generation:
+        raise HTTPException(409, "설정이 바뀌었습니다. 현재 숫자를 다시 더블클릭하세요.")
+    shot_clock = body.key == CLOCK_KEYS[0]
+    maximum = (settings.shot_maximum if shot_clock else settings.game_maximum) if settings.keys else settings.maximum
+    reading = parse_clock(body.value, maximum=maximum)
+    if reading is None:
+        raise HTTPException(400, f"반영할 수 있는 숫자가 없습니다. 형식과 최대값 {maximum:g}초를 확인하세요.")
+    if not relay.ready():
+        raise HTTPException(409, "웹 호스트를 연결한 뒤 숫자를 더블클릭하세요.")
+    # Finish older OCR first, then invalidate pending browser frames so they
+    # cannot overwrite the operator's explicit correction.
+    async with frame_lock:
+        if body.generation != generation:
+            raise HTTPException(409, "설정이 바뀌었습니다. 현재 숫자를 다시 더블클릭하세요.")
+        current = relay.current(body.key)
+        keep_running = not (shot_clock and reading.seconds in (14, 24))
+        if not await relay.set_value(reading, body.key, keep_running=keep_running):
+            raise HTTPException(409, "웹 전송에 실패했습니다. 연결 상태를 확인한 뒤 다시 눌러주세요.")
+        generation += 1
+        captured = now_ms()
+        if gate_relay_generation != relay.generation:
+            reset_channels()
+            gate_relay_generation = relay.generation
+        gates[body.key].set_baseline(reading, captured, shot_clock=shot_clock)
+        trackers[body.key].set_baseline(reading, captured, running=bool(current and current["running"] and keep_running))
+        phases[body.key].reset()
+        return {"generation": generation, "sent": True, "key": body.key,
+                "confirmed": asdict(confirmed_reading(body.key)), "reason": "더블클릭한 값 수동 전송"}
 
 
 class Source(BaseModel):
@@ -277,28 +326,50 @@ async def recognize(request: Request):
         accepted, reason = gate.accept(None if over_limit else reading, captured, now_ms(),
                                        settings.minimum_confidence,
                                        shot_clock=shot_clock,
-                                       tracking=settings.mode == "auto")
+                                       tracking=settings.mode == "auto" and not (
+                                           reading and reading.resolution_ms == 100 and (
+                                               (shot_clock and reading.seconds <= 5 and not settings.shot_low_sync) or
+                                               (not shot_clock and reading.seconds < 60 and not settings.game_low_sync))))
+        confirmed = confirmed_reading(key)
         if over_limit:
             reason = f"{reading.text} = {reading.seconds:g}초 인식됨 · 동기화 최대값 {maximum:g}초 초과. 경기 시계를 선택하거나 최대값을 늘리세요."
         elif not reading:
             reason = f"{recognition.reason} · 마지막 확정값 유지"
         sent = False
         mode, offset_ms = settings.mode, 0
+        sync_reading = confirmed
+        current = relay.current(key) if armed else None
+        timer_only = accepted and tracker.timer_only(
+            reading, captured, current=current, shot_clock=shot_clock,
+            recovery_confirmed=gate.evidence >= 4,
+            shot_low_sync=settings.shot_low_sync, game_low_sync=settings.game_low_sync,
+        )
         if accepted:
             if gate.game_reset_confirmed:
                 tracker.reset()
                 phase.reset()
             phase.confirm(previous, reading, captured)
         timing = phase.status(captured)
-        if accepted and mode == "auto":
+        if timer_only:
+            mode, reason = None, ("샷클락 5초 이하" if shot_clock else "게임클락 1분 미만") + " · 카메라 보정 없이 타이머 유지"
+        elif accepted and mode == "auto" and reading.resolution_ms == 100 and armed and not relay.decimal_tracking_supported():
+            mode, reason = None, "소수 가설 추적을 지원하도록 OBS 웹 호스트를 새로고침하세요."
+        elif accepted and mode == "auto":
             mode, reason = tracker.decide(reading, captured,
-                                         current=relay.current(key) if armed else None,
+                                         current=current,
                                          shot_clock=shot_clock,
                                          compensation_seconds=settings.compensation_seconds,
                                          phase_ms=timing["phase_ms"], phase_ready=timing["samples"] > 0,
                                          uncertainty_ms=timing["uncertainty_ms"] or 0,
-                                         age_ms=now_ms() - captured)
-            if mode == "run":
+                                         age_ms=now_ms() - captured,
+                                         recovery_confirmed=gate.evidence >= 4,
+                                         game_pause_confirmed=gate.game_pause_confirmed,
+                                         shot_low_sync=settings.shot_low_sync, game_low_sync=settings.game_low_sync,
+                                         decimal_fit=gate.decimal_fit)
+            if mode and gate.decimal_fit is not None:
+                sync_reading = replace(confirmed, seconds=tracker.sync_seconds)
+                offset_ms = tracker.sync_offset_ms
+            elif mode == "run":
                 offset_ms = timing["phase_ms"] + settings.compensation_seconds * 1000
                 reason += f" · 초 경계 {timing['phase_ms']}ms / 추가 {round(settings.compensation_seconds * 1000)}ms"
             elif mode == "hold":
@@ -307,14 +378,16 @@ async def recognize(request: Request):
             tracker.hold(reading, captured)
             phase.reset()
         if accepted and armed and mode:
-            sent = await relay.observe(reading, captured, key, mode, offset_ms)
+            sent = await relay.observe(sync_reading, captured, key, mode, offset_ms,
+                                       shot_low_sync=settings.shot_low_sync, game_low_sync=settings.game_low_sync)
             reason += " · 웹 전송" if sent else " · 웹 호스트 연결 대기"
             if not sent and settings.mode == "auto":
                 tracker.reset()
         elif accepted and not armed:
             reason += " · 미리보기"
         return {"key": key, "reading": asdict(reading) if reading else None, "accepted": accepted, "timing": timing,
-                "confirmed": asdict(gate.confirmed) if gate.confirmed else None,
+                "trajectory": gate.trajectory.status(),
+                "confirmed": asdict(confirmed) if confirmed else None,
                 "confirmation_frames": gate.evidence,
                 "sent": sent, "reason": reason, "inference_ms": round(elapsed),
                 "raw_text": recognition.raw_text, "method": recognition.method,
@@ -322,6 +395,9 @@ async def recognize(request: Request):
 
 
 if __name__ == "__main__":
+    # Native library failures otherwise leave only "segmentation fault" in
+    # the terminal. Emit Python thread stacks for actionable diagnostics.
+    faulthandler.enable()
     parser = argparse.ArgumentParser(description="Local scoreboard clock reader")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()

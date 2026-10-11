@@ -1,8 +1,9 @@
 """Strict clock parsing and temporal validation, independent of camera/model I/O."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 import re
 import unicodedata
+from trajectory import ClockTrajectory
 
 
 @dataclass(frozen=True)
@@ -18,14 +19,42 @@ def parse_clock(text: str, confidence: float = 1.0, maximum: float = 86400) -> R
     # Only spaces beside separators are harmless. Never concatenate separate numbers
     # or invent a missing colon/dot ("50 1" must not silently become 501).
     text = re.sub(r"\s*([:.])\s*", r"\1", text)
+    if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+        return None
+    # Some scoreboards use a colon for tenths below one minute. The single
+    # trailing digit distinguishes 3:9 (3.9s) from 3:09 (3m 9s).
+    short_colon = re.fullmatch(r"([0-5]?\d):(\d)", text)
+    if short_colon:
+        value = int(short_colon[1]) + int(short_colon[2]) / 10
+        return Reading(text, value, 100, confidence) if value <= maximum else None
     match = re.fullmatch(r"(?:(\d{1,3}):([0-5]\d)(\.\d)?|(\d{1,5})(\.\d)?)", text)
-    if not match or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+    if not match:
         return None
     minutes, seconds, fraction, plain, plain_fraction = match.groups()
     value = int(minutes) * 60 + int(seconds) + float(fraction or 0) if minutes else float(plain + (plain_fraction or ""))
     if value > maximum:
         return None
     return Reading(text, value, 100 if fraction or plain_fraction else 1000, confidence)
+
+
+def format_confirmed_reading(reading: Reading | None, *, shot_clock: bool) -> Reading | None:
+    """Use the timer's format for accepted output, preserving the OCR evidence.
+
+    Raw text still drives validation and is shown as the current candidate.
+    Formatting an observed integer as 4.0 must not invent decimal precision
+    or turn a running timer into a held decimal observation.
+    """
+    if reading is None:
+        return None
+    seconds = reading.seconds
+    if seconds < (5 if shot_clock else 60):
+        text = f"{seconds:.1f}"
+    elif shot_clock:
+        text = str(math.ceil(seconds))
+    else:
+        whole = math.ceil(seconds)
+        text = f"{whole // 60:02d}:{whole % 60:02d}"
+    return replace(reading, text=text)
 
 
 @dataclass(frozen=True)
@@ -44,6 +73,8 @@ class ReadingGate:
     window_ms = 1000
     game_window_ms = 10000
     game_reset_seconds = (180, 420)
+    pause_window_ms = 2200
+    game_recovery_seconds = 10
 
     def __init__(self):
         self.reset()
@@ -56,6 +87,31 @@ class ReadingGate:
         self.evidence = 0
         self.game_history: list[Observation] = []
         self.game_reset_confirmed = False
+        self.game_pause_confirmed = False
+        self.pause_history: list[Observation] = []
+        self.game_recovery_ceiling = math.inf
+        self.trajectory = ClockTrajectory()
+        self.decimal_fit = None
+        self.trusted_history: list[Observation] = []
+
+    def set_baseline(self, reading, captured_ms, *, shot_clock):
+        self.reset()
+        self._confirm(reading, captured_ms, shot_clock=shot_clock)
+        self.last_frame_ms = captured_ms
+
+    def _game_pause_evidence(self, reading):
+        visible = [x for x in self.pause_history if x.reading]
+        matches = [x for x in visible if self._same_display(x.reading, reading)]
+        if len(matches) < 4 or matches[-1].captured_ms - matches[0].captured_ms < 1200:
+            return []
+        # Brief occlusions do not erase stop evidence; a long blind interval
+        # cannot prove that the clock was stationary throughout it.
+        if any(b.captured_ms - a.captured_ms > 850 for a, b in zip(matches, matches[1:])):
+            return []
+        visible = [x for x in visible if x.captured_ms >= matches[0].captured_ms]
+        if sum(x.reading.confidence for x in matches) < .8 * sum(x.reading.confidence for x in visible):
+            return []
+        return matches
 
     def _game_countdown_possible(self, reading, captured_ms):
         # Checking only the latest accepted value lets repeated one-second
@@ -69,18 +125,30 @@ class ReadingGate:
                 return False
         return True
 
-    def _confirm(self, reading, captured_ms, *, shot_clock, game_reset=False):
+    def _confirm(self, reading, captured_ms, *, shot_clock, game_reset=False, game_pause=False):
         self.confirmed = reading
         self.confirmed_ms = captured_ms
         self.game_reset_confirmed = game_reset
+        self.game_pause_confirmed = game_pause
+        self.trusted_history = [x for x in self.trusted_history if captured_ms - x.captured_ms <= 10000]
+        if game_reset or (shot_clock and reading.resolution_ms == 1000 and reading.seconds in (14, 24)):
+            self.trusted_history = []
+        self.trusted_history.append(Observation(reading, captured_ms))
+        if reading.resolution_ms == 1000:
+            self.trajectory.reset()
         if not shot_clock:
+            ceiling = reading.seconds + self.game_recovery_seconds
+            # Recovery itself cannot keep raising the maximum plausible time.
+            self.game_recovery_ceiling = ceiling if game_reset else min(self.game_recovery_ceiling, ceiling)
             self.game_history = [] if game_reset else [x for x in self.game_history if captured_ms - x.captured_ms <= self.game_window_ms]
             self.game_history.append(Observation(reading, captured_ms))
+            if game_reset:
+                self.pause_history = [Observation(reading, captured_ms)]
 
     @staticmethod
     def _same_display(a: Reading, b: Reading) -> bool:
         return (a.seconds == b.seconds and a.resolution_ms == b.resolution_ms
-                and (":" in a.text) == (":" in b.text))
+                and (a.resolution_ms == 100 or (":" in a.text) == (":" in b.text)))
 
     @staticmethod
     def _countdown(a: Observation, b: Observation) -> bool:
@@ -94,7 +162,7 @@ class ReadingGate:
         # as for decimals, corroborate a time-consistent sequence across digits.
         samples = [x for x in self.history if x.reading is not None
                    and x.reading.resolution_ms == current.reading.resolution_ms
-                   and (":" in x.reading.text) == (":" in current.reading.text)
+                   and (current.reading.resolution_ms == 100 or (":" in x.reading.text) == (":" in current.reading.text))
                    and (not shot_recovery or 0 <= x.reading.seconds <= 24)
                    and (self.confirmed is None or x.captured_ms > self.confirmed_ms)]
         if current.reading.resolution_ms == 1000 and not shot_recovery:
@@ -115,6 +183,8 @@ class ReadingGate:
                tracking: bool = False) -> tuple[bool, str]:
         self.evidence = 0
         self.game_reset_confirmed = False
+        self.game_pause_confirmed = False
+        self.decimal_fit = None
         if not math.isfinite(captured_ms) or not math.isfinite(now_ms) or not -200 <= now_ms - captured_ms <= 900:
             return False, "오래된 프레임은 건너뜀 · 마지막 확정값 유지"
         if self.last_frame_ms is not None and captured_ms - self.last_frame_ms < 40:
@@ -125,8 +195,28 @@ class ReadingGate:
         current = Observation(reading, captured_ms)
         self.history = [x for x in self.history if captured_ms - x.captured_ms <= self.window_ms]
         self.history.append(current)
+        self.pause_history = [x for x in self.pause_history if captured_ms - x.captured_ms <= self.pause_window_ms]
+        self.pause_history.append(current)
         if reading is None:
             return False, "가림/낮은 신뢰도 · 마지막 확정값 유지"
+
+        if tracking and reading.resolution_ms == 100:
+            # Compare against trusted points, never a rejected OCR candidate.
+            # Keeping a history also prevents consecutive small errors from
+            # repeatedly spending the same two-second tolerance.
+            references = [x for x in self.trusted_history if captured_ms - x.captured_ms <= 10000]
+            if not references:
+                references = self.trusted_history[-1:]
+            for old in references:
+                allowance = max(0, captured_ms-old.captured_ms)/1000 + 2
+                if abs(old.reading.seconds-reading.seconds) > allowance + 1e-6:
+                    return False, "소수 후보 변화가 경과 시간 + 2초 초과 · 보류"
+            self.decimal_fit = self.trajectory.observe(reading, captured_ms)
+            if self.decimal_fit is None:
+                return False, "소수 관측점에서 정지/감소 직선 가설 확인 중"
+            self.evidence = self.decimal_fit.inliers
+            self._confirm(reading, captured_ms, shot_clock=shot_clock)
+            return True, f"소수 {'감소' if self.decimal_fit.rate else '정지'} 가설 · {self.evidence}/{self.decimal_fit.points}점 일치"
 
         required, span_ms, label = 3, 240, "최근 1초 후보 확인"
         shot_recovery = game_reset = False
@@ -138,6 +228,14 @@ class ReadingGate:
             game_reset = (not shot_clock and reading.resolution_ms == 1000
                           and reading.seconds in self.game_reset_seconds
                           and (delta < -.001 or not game_possible))
+            if (not shot_clock and not game_reset and game_possible
+                    and reading.seconds <= self.game_recovery_ceiling
+                    and delta >= -self.game_recovery_seconds):
+                pause_evidence = self._game_pause_evidence(reading)
+                if pause_evidence:
+                    self.evidence = len(pause_evidence)
+                    self._confirm(reading, captured_ms, shot_clock=False, game_pause=True)
+                    return True, "같은 게임클락을 여러 프레임에서 확인 · 정지값 복구"
             reset = shot_clock and reading.resolution_ms == 1000 and reading.seconds in (14, 24) and abs(delta) > .001
             shot_recovery = (shot_clock and reading.resolution_ms == 1000 and 0 <= reading.seconds <= 24
                              and (reset or delta < -.001 or elapsed >= 1.2))
@@ -148,7 +246,7 @@ class ReadingGate:
             elif shot_recovery:
                 required, span_ms, label = 4, 450, "샷클락 리셋/가림 뒤 복구 확인"
             elif delta < -.001:
-                return False, "자동 복구 범위 밖 증가 보류 · 다시 맞추기를 누르세요" if shot_clock else "증가 무시 · 새 경기 시간은 다시 맞추기를 누르세요"
+                return False, "자동 복구 범위 밖 증가 보류 · 다시 맞추기를 누르세요" if shot_clock else "게임클락 증가 보류 · 가까운 정지값은 1.2초 이상 확인 후 복구"
             elif delta > .001:
                 quantum = max(old.resolution_ms, reading.resolution_ms) / 1000
                 correction = shot_clock and tracking and reading.resolution_ms == 1000 and delta > 1.001
@@ -183,11 +281,12 @@ class ReadingGate:
 
 
 class ClockTracker:
-    """Integer timer first; camera evidence corrects it or confirms a stop.
+    """Timer first; camera evidence corrects it or confirms a stop.
 
     Returns the wire mode to send, or None when the running clock is already close
-    enough. No calls are made for missing/unconfirmed frames. Decimal observations
-    always hold their exact value, without interpolation.
+    enough. No calls are made for missing/unconfirmed frames. Shot clocks at or
+    below five seconds keep the timer by default. Enabled decimal observations
+    fit stopped/countdown trajectories; low-time synchronization is optional.
     """
     def __init__(self):
         self.reset()
@@ -198,6 +297,9 @@ class ClockTracker:
         self.stable_since = None
         self.anchor = None
         self.last_phase_adjust = -math.inf
+        self.sync_seconds = None
+        self.sync_offset_ms = 0
+        self.last_decimal_adjust = -math.inf
 
     def current(self, now_ms):
         if self.anchor is None:
@@ -209,15 +311,70 @@ class ClockTracker:
     def hold(self, reading: Reading, captured_ms: float):
         self.anchor = (reading.seconds, captured_ms, False)
 
+    def set_baseline(self, reading, captured_ms, *, running):
+        self.reset()
+        self.last_reading, self.last_ms = reading, captured_ms
+        self.stable_since = captured_ms
+        self.anchor = (reading.seconds, captured_ms, running)
+
+    def timer_only(self, reading: Reading, captured_ms: float, *, current=None,
+                   shot_clock=True, recovery_confirmed=False,
+                   shot_low_sync=False, game_low_sync=True) -> bool:
+        clock = current if current is not None else self.current(captured_ms)
+        if not shot_clock:
+            return not game_low_sync and (reading.seconds < 60 or
+                   (clock is not None and clock["seconds"] < 60 and reading.seconds <= 60))
+        if shot_low_sync:
+            return False
+        if reading.seconds <= 5:
+            return True
+        if clock is None or clock["seconds"] > 5:
+            return False
+        # Once the timer reaches five seconds, delayed higher observations must
+        # not stop it or move it back up. A corroborated reset can leave this
+        # interval, including a hidden 14/24 reset first seen at 13 or 12.
+        reset = (reading.resolution_ms == 1000 and 5 < reading.seconds <= 24
+                 and (reading.seconds in (14, 24)
+                      or (recovery_confirmed and reading.seconds - clock["seconds"] >= 2)))
+        return not reset
+
     def decide(self, reading: Reading, captured_ms: float, *, current=None,
                shot_clock=True, compensation_seconds=0, phase_ms=0,
-               phase_ready=False, uncertainty_ms=0, age_ms=0) -> tuple[str | None, str]:
+               phase_ready=False, uncertainty_ms=0, age_ms=0,
+               recovery_confirmed=False, game_pause_confirmed=False,
+               shot_low_sync=False, game_low_sync=True, decimal_fit=None) -> tuple[str | None, str]:
+        if self.timer_only(reading, captured_ms, current=current, shot_clock=shot_clock,
+                           recovery_confirmed=recovery_confirmed,
+                           shot_low_sync=shot_low_sync, game_low_sync=game_low_sync):
+            return None, ("샷클락 5초 이하" if shot_clock else "게임클락 1분 미만") + " · 카메라 보정 없이 타이머 유지"
         previous = self.last_reading
         same = previous is not None and ReadingGate._same_display(previous, reading)
         if not same or captured_ms - self.last_ms > 650:
             self.stable_since = captured_ms
         self.last_reading, self.last_ms = reading, captured_ms
         clock = current or self.current(captured_ms)
+        if reading.resolution_ms == 100:
+            if decimal_fit is None:
+                return None, "소수 직선 가설 확인 중 · 기존 타이머 유지"
+            mode = "run" if decimal_fit.rate else "hold"
+            physical = decimal_fit.seconds
+            seconds = max(0, physical - (compensation_seconds if decimal_fit.rate else 0))
+            # The authoritative current value is sampled after inference. Local
+            # preview current() above is already in capture-time coordinates.
+            desired_now = max(0, seconds - (age_ms/1000 if current and decimal_fit.rate else 0))
+            reason = f"소수 {'감소' if decimal_fit.rate else '정지'} 가설 · {decimal_fit.inliers}/{decimal_fit.points}점 · 오차 ±{decimal_fit.uncertainty_ms}ms"
+            same_mode = clock is not None and clock["running"] == bool(decimal_fit.rate)
+            tolerance = max(.12, decimal_fit.uncertainty_ms*2/1000) if decimal_fit.rate else .025
+            if same_mode and (abs(clock["seconds"]-desired_now) <= tolerance or
+                              (decimal_fit.rate and captured_ms-self.last_decimal_adjust < 400)):
+                return None, reason + " · 타이머 유지"
+            self.anchor = (seconds, captured_ms, bool(decimal_fit.rate))
+            self.last_decimal_adjust = captured_ms
+            # Preserve the existing wire contract (seconds in 100ms buckets),
+            # with the fitted fractional offset carried separately.
+            self.sync_seconds = math.ceil(physical*10 - 1e-9)/10 if decimal_fit.rate else round(physical, 1)
+            self.sync_offset_ms = max(0, (self.sync_seconds-physical + compensation_seconds)*1000) if decimal_fit.rate else 0
+            return mode, reason
         # Compare in the physical scoreboard's coordinate system. The web timer
         # is deliberately ahead, so never subtract compensation again on a skip.
         predicted = math.ceil(clock["seconds"] + (compensation_seconds if clock["running"] else 0)) if clock else reading.seconds
@@ -234,8 +391,8 @@ class ClockTracker:
                         and (previous is None or previous.resolution_ms == 100 or reset
                              or (clock and reading.seconds - predicted >= 2)))
 
-        if reading.resolution_ms == 100:
-            mode, reason = "hold", "소수는 확인된 관찰값만 표시"
+        if not shot_clock and game_pause_confirmed:
+            mode, reason = "hold", "같은 게임클락을 1.2초 이상 확인 · 실제 정지값으로 복구"
         elif preset_reset:
             mode, reason = "hold", "14·24초 리셋 확인 · 숫자 감소까지 정지"
         elif previous is None or previous.resolution_ms == 100 or reset:

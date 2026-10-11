@@ -9,6 +9,7 @@ const clockKeys=['OBS_BASKETBALL_SHOT_CLOCK','OBS_BASKETBALL_GAME_CLOCK'];
 const suffix=key=>key.includes('SHOT')?'Shot':'Game';
 const label=key=>key.includes('SHOT')?'샷클락':'게임클락';
 const candidateUpdated={};
+const manualNoticeUntil={};
 let displayClocks={};
 function showCandidate(key,data) {
   const name=suffix(key),reading=data?.reading;
@@ -21,7 +22,7 @@ function showCandidate(key,data) {
     details.push(`신뢰도 ${Math.round(reading.confidence*100)}%`);
   } else details.push(data?.raw_text?'시간 형식 확인 안 됨':'인식 안 됨');
   $('candidateDetail'+name).textContent=details.join(' · ');
-  $('candidateState'+name).textContent=data?.sent?'웹 전송':!data?.accepted?'미반영 · '+(data?.reason||'인식 대기'):!enabled?'미리보기 · 웹 미전송':'웹 타이머 유지';
+  if(performance.now()>(manualNoticeUntil[key]||0)) $('candidateState'+name).textContent=data?.sent?'웹 전송':!data?.accepted?'미반영 · '+(data?.reason||'인식 대기'):!enabled?'미리보기 · 웹 미전송':'웹 타이머 유지';
 }
 function clearCandidate(key,message='인식 대기') {
   const name=suffix(key);
@@ -67,7 +68,7 @@ async function post(path, body) {
 }
 function options(arm = enabled) {
   return {enabled:arm, key:$('target').value, keys:clockKeys.filter(key=>rois[key]).length?clockKeys.filter(key=>rois[key]):[$('target').value], mode:$('mode').value, shot_maximum:Number($('shotMaximum').value),game_maximum:Number($('gameMaximum').value),
-    compensation_seconds:Number($('compensation').value),
+    compensation_seconds:Number($('compensation').value), shot_low_sync:$('shotLowSync').checked, game_low_sync:$('gameLowSync').checked,
     minimum_confidence:Number($('threshold').value),  preprocessing:$('preprocessing').value, reader:$('reader').value};
 }
 function syncUI() {
@@ -77,11 +78,54 @@ function syncUI() {
   if (enabled) $('toggle').disabled = busy;
   $('syncBadge').textContent = enabled ? '동기화 켜짐' : '미리보기';
   $('reacquire').disabled = busy || !active || !roi || !modelReady;
+  $('shotLowSync').disabled=busy;$('gameLowSync').disabled=busy;
 }
 async function configure(arm = false) {
   const result = await post('/api/settings', options(arm));
   generation = result.generation; enabled = arm; syncUI();
   clearReadouts();
+}
+try {
+  const saved=JSON.parse(localStorage.getItem('clock-reader-low-sync'));
+  if(typeof saved?.shot==='boolean') $('shotLowSync').checked=saved.shot;
+  if(typeof saved?.game==='boolean') $('gameLowSync').checked=saved.game;
+} catch { /* use the defaults */ }
+function lowSyncLabels() {
+  $('shotFormatRule').textContent=$('shotLowSync').checked?'5초 이하 카메라 동기화':'5초 이하 타이머 유지';
+  $('gameFormatRule').textContent=$('gameLowSync').checked?'1분 미만 카메라 동기화':'1분 미만 타이머 유지';
+}
+for(const id of ['shotLowSync','gameLowSync']) $(id).onchange=async()=>{
+  busy=true;syncUI();
+  try {
+    await configure(enabled);
+    localStorage.setItem('clock-reader-low-sync',JSON.stringify({shot:$('shotLowSync').checked,game:$('gameLowSync').checked}));
+    error();
+  } catch(e) {error(e.message);}
+  finally {busy=false;lowSyncLabels();syncUI();}
+};
+lowSyncLabels();
+async function applyNumber(key,value,version) {
+  if(busy) return;
+  if(!connected) return error('웹 호스트를 연결한 뒤 숫자를 더블클릭하세요.');
+  if(!value || value==='—') return error('반영할 수 있는 인식값이 없습니다.');
+  busy=true;syncUI();
+  try {
+    const result=await post('/api/apply',{key,value,generation:version});
+    generation=result.generation;
+    $('reading'+suffix(key)).textContent=result.confirmed.text;
+    $('confidence'+suffix(key)).textContent='수동 반영';
+    $('candidateState'+suffix(key)).textContent=`${result.confirmed.text} · 수동 전송 완료`;
+    manualNoticeUntil[key]=performance.now()+2500;
+    error();
+  } catch(e) {error(e.message);}
+  finally {busy=false;syncUI();}
+}
+for(const key of clockKeys) for(const prefix of ['candidate','reading']) {
+  const number=$(prefix+suffix(key));let clicked=null;
+  // Keep the value of the first click even if OCR changes during the double click.
+  number.addEventListener('mousedown',e=>{if(e.button===0 && e.detail===1) clicked={value:number.textContent,version:generation};});
+  number.addEventListener('dblclick',()=>{const selection=clicked||{value:number.textContent,version:generation};clicked=null;void applyNumber(key,selection.value,selection.version);});
+  number.addEventListener('keydown',e=>{if(e.key==='Enter' || e.key===' ') {e.preventDefault();void applyNumber(key,number.textContent,generation);}});
 }
 function saveRoi() {
   if (!roi) return;
@@ -241,7 +285,7 @@ $('reacquire').onclick=async()=>{
   finally {busy=false;syncUI();}
 };
 for(const id of ['mode','compensation','shotMaximum','gameMaximum','threshold','preprocessing','reader']) $(id).onchange=async()=>{
-  $('modeHint').textContent=$('mode').value==='auto'?'정수는 가려져도 1초씩 흐릅니다. 같은 값이 1.2초 이상 보이면 정지하고, 2초 이상 어긋난 값과 가림 중 샷클락 리셋을 보정합니다. 14·24초 리셋은 정지한 뒤 감소가 확인되면 재생합니다. 소수는 인식값만 표시합니다.':'확정된 카메라 값만 표시합니다. 가림·오인식 중에는 마지막 값을 유지합니다.';
+  $('modeHint').textContent=$('mode').value==='auto'?'정수는 가려져도 1초씩 흐릅니다. 같은 값이 1.2초 이상 보이면 정지하고 가까운 정지값으로 복구합니다. 14·24초 리셋은 정지한 뒤 감소하면 재생합니다. 소수 구간은 여러 관측점으로 정지/감소 직선을 추정해 보정합니다. 소수 구간 동기화를 끄면 기존 타이머에 맡깁니다.':'확정된 카메라 값을 반영합니다. 소수 구간 동기화를 끄면 해당 구간은 기존 타이머를 유지합니다.';
   try{await configure(false);}catch(e){error(e.message);}
 };
 async function recognizeLoop() {
@@ -298,9 +342,9 @@ async function statusLoop() {
       clockOffset=data.now_ms-(start+end)/2;connected=data.connected;modelReady=data.model_ready;
       $('modelState').textContent=data.model;$('relayState').textContent=data.relay;$('connectionDot').classList.toggle('active',connected);
       for(const key of clockKeys) {
-        const state=data.clocks?.[key],current=state?.current||state?.preview,timing=state?.timing;
+        const state=data.clocks?.[key],current=state?.current||state?.preview,timing=state?.timing,fit=state?.trajectory;
         displayClocks[key]={clock:current||null,at:data.now_ms-clockOffset};
-        $('timing'+suffix(key)).textContent=timing?.samples?`초 경계 ${timing.phase_ms}ms · 추정 범위 ±${timing.uncertainty_ms}ms`:'숫자 전환 시각 측정 중';
+        $('timing'+suffix(key)).textContent=fit?`소수 ${fit.rate?'감소':'정지'} 가설 · ${fit.inliers}/${fit.points}점 · 오차 ±${fit.uncertainty_ms}ms${data.now_ms-fit.captured_ms>1500?' · 재관측 대기':''}`:timing?.samples?`초 경계 ${timing.phase_ms}ms · 추정 범위 ±${timing.uncertainty_ms}ms`:'숫자 전환 시각 측정 중';
         if(candidateUpdated[key]!==undefined && performance.now()-candidateUpdated[key]>1500) clearCandidate(key,'새 프레임 대기 · 확정값은 아래에 유지');
       }
       renderClocks();

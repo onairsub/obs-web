@@ -63,6 +63,6 @@ class PhaseTests(unittest.TestCase):
         shot, game = ClockTracker(), ClockTracker()
         shot.decide(parse_clock('24'), 1000)
         game.decide(parse_clock('7:00'), 1000)
-        shot.decide(parse_clock('4.9'), 1500)
-        self.assertEqual(shot.current(4000), {'seconds':4.9, 'running':False})
+        self.assertIsNone(shot.decide(parse_clock('4.9'), 1500)[0])
+        self.assertEqual(shot.current(4000), {'seconds':24, 'running':False})
         self.assertEqual(game.current(4000), {'seconds':417, 'running':True})

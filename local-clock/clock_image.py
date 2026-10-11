@@ -12,6 +12,18 @@ class Separator:
     right: int
 
 
+def connected_components(mask):
+    """Label pixels without OpenCV's default Spaghetti/Bolelli implementation.
+
+    That implementation crashed inside LabelingBolelli on camera frames on
+    macOS ARM64 / OpenCV 5.0. Use SAUF explicitly at every clock preprocessing
+    call site; a native SIGSEGV cannot be caught by Python's exception handler.
+    """
+    return cv2.connectedComponentsWithStatsWithAlgorithm(
+        np.ascontiguousarray(mask, dtype=np.uint8), 8, cv2.CV_32S, cv2.CCL_SAUF,
+    )
+
+
 def foreground_mask(image):
     gray = np.max(image, axis=2)
     border = np.concatenate([gray[0], gray[-1], gray[:, 0], gray[:, -1]])
@@ -24,7 +36,7 @@ def foreground_mask(image):
 def tight_clock_crop(image):
     """Remove flat ROI margins before resizing so small dots retain their pixels."""
     mask = foreground_mask(image)
-    count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
+    count, _, stats, _ = connected_components(mask)
     useful = [i for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= 3]
     if not useful or len(useful) > 80 or np.mean(mask > 0) > .6:
         return image
@@ -42,7 +54,7 @@ def tight_clock_crop(image):
 
 def find_separators(image):
     mask = foreground_mask(image)
-    count, _, stats, centers = cv2.connectedComponentsWithStats(mask)
+    count, _, stats, centers = connected_components(mask)
     components = [(i, stats[i], centers[i]) for i in range(1, count) if stats[i, 4] >= 3]
     if not components or len(components) > 80:
         return []

@@ -18,6 +18,7 @@ export type ClockSnapshot = {
   clockVersion?: number; // Absent on legacy hosts; parsed so the UI can explain.
   observationVersion?: number; // Additive capability: older manual remotes still work.
   trackingVersion?: number; // Explicit support for starting a camera-followed timer.
+  decimalTrackingVersion?: number; // Fixed-slope camera fits may run observed tenths.
   epoch: string;
   revision: number;
   hostNow: number;
@@ -116,7 +117,7 @@ export function isClockCommand(value: unknown): value is ClockCommand {
   if (op?.action === "observe") {
     return c.key !== "OBS_SOCCER_CLOCK" && Number.isFinite(op.seconds) && op.seconds >= 0 && op.seconds <= 86400
       && (op.resolutionMs === 100 || op.resolutionMs === 1000) && Number.isFinite(op.capturedAt)
-      && (op.mode === "preserve" || op.mode === "hold" || (op.mode === "run" && op.resolutionMs === 1000))
+      && (op.mode === "preserve" || op.mode === "hold" || op.mode === "run")
       && (op.format === undefined || op.format === "seconds" || op.format === "minutes")
       && (op.offsetMs === undefined || (op.mode === "run" && Number.isFinite(op.offsetMs) && op.offsetMs >= 0 && op.offsetMs <= 5000))
       && Math.abs(op.seconds * 1000 / op.resolutionMs - Math.round(op.seconds * 1000 / op.resolutionMs)) < 0.000001;
@@ -145,7 +146,7 @@ export class HostClocks {
   }
 
   snapshot(): ClockSnapshot {
-    return { clockVersion: CLOCK_PROTOCOL_VERSION, observationVersion: 1, trackingVersion: 2, epoch: this.epoch, revision: this.revision, hostNow: this.now(), clocks: { ...this.clocks } };
+    return { clockVersion: CLOCK_PROTOCOL_VERSION, observationVersion: 1, trackingVersion: 2, decimalTrackingVersion: 1, epoch: this.epoch, revision: this.revision, hostNow: this.now(), clocks: { ...this.clocks } };
   }
 
   apply(key: ClockKey, operation: ClockOperation): ClockSnapshot {

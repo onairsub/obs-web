@@ -47,6 +47,27 @@ class ActualModelTests(unittest.TestCase):
                     self.assertEqual(result.reading.text, text)
                     self.assertGreaterEqual(result.reading.confidence, .85)
 
+    def test_single_digit_after_colon_means_tenths_in_real_ocr(self):
+        for render in [sample, segment_sample]:
+            for text, expected in [('3:9', 3.9), ('59:9', 59.9), ('3:09', 189)]:
+                with self.subTest(render=render.__name__, text=text):
+                    result = self.engine.read_detailed(render(text))
+                    self.assertIsNotNone(result.reading, result)
+                    self.assertEqual(result.reading.text, text)
+                    self.assertEqual(result.reading.seconds, expected)
+
+    def test_tall_square_colon_is_not_mistaken_for_a_zero_digit(self):
+        image = segment_sample('3:9')
+        image[:, 88:120] = 0
+        for top in [45, 100]:
+            cv2.rectangle(image, (91, top), (116, top+28), (30,80,255), -1)
+        geometric = read_segments(tight_clock_crop(image))
+        self.assertIsNotNone(geometric)
+        self.assertEqual(geometric.text, '3:9')
+        result = self.engine.read_detailed(image)
+        self.assertIsNotNone(result.reading, result)
+        self.assertEqual(result.reading.seconds, 3.9)
+
     def test_printed_five_is_not_vetoed_by_a_false_led_six(self):
         for scale in [1, .6]:
             image = cv2.resize(sample('5'), None, fx=scale, fy=scale)

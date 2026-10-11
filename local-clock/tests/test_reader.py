@@ -1,20 +1,42 @@
 import unittest
 
-from clock_reader import ReadingGate, parse_clock
+from clock_reader import ReadingGate, format_confirmed_reading, parse_clock
 from relay import session_address
 
 
 class ParsingTests(unittest.TestCase):
+    def test_confirmed_format_uses_clock_rules_without_changing_value_or_precision(self):
+        for shot_clock, source, expected in [
+            (False, "1:43", "01:43"), (False, "01:43", "01:43"),
+            (False, "2:05", "02:05"), (False, "103", "01:43"),
+            (False, "7:00", "07:00"), (False, "1:00", "01:00"),
+            (False, "0:59", "59.0"), (False, "59.9", "59.9"),
+            (True, "24", "24"), (True, "5", "5"),
+            (True, "4", "4.0"), (True, "4.2", "4.2"),
+            (True, "00:04.2", "4.2"), (True, "0", "0.0"),
+        ]:
+            with self.subTest(shot_clock=shot_clock, source=source):
+                raw = parse_clock(source, .95)
+                confirmed = format_confirmed_reading(raw, shot_clock=shot_clock)
+                self.assertEqual(confirmed.text, expected)
+                self.assertEqual((confirmed.seconds, confirmed.resolution_ms, confirmed.confidence),
+                                 (raw.seconds, raw.resolution_ms, raw.confidence))
+                self.assertEqual(raw.text, source, "the current OCR candidate stays unmodified")
+                self.assertEqual(format_confirmed_reading(confirmed, shot_clock=shot_clock), confirmed)
+        self.assertIsNone(format_confirmed_reading(None, shot_clock=False))
+
     def test_supported_displays(self):
         for text, seconds, resolution in [("7:00", 420, 1000), ("3:43", 223, 1000),
                                           ("50.1", 50.1, 100), ("24", 24, 1000),
                                           ("0.0", 0, 100), ("00:04.9", 4.9, 100),
-                                          ("３：４３", 223, 1000)]:
+                                          ("３：４３", 223, 1000), ("3:9", 3.9, 100),
+                                          ("3:09", 189, 1000), ("59:9", 59.9, 100),
+                                          ("7:0", 7, 100), ("０：１", .1, 100)]:
             reading = parse_clock(text)
             self.assertEqual((reading.seconds, reading.resolution_ms), (seconds, resolution))
 
     def test_ambiguous_and_invalid_reads_never_become_numbers(self):
-        for value in ["", "7:60", "7:0", "50 1", "5O.1", "-4", "4.92", "1:2:3", "24 14", "score 24", "NaN", "50,1"]:
+        for value in ["", "7:60", "60:9", "123:4", "50 1", "5O.1", "-4", "4.92", "1:2:3", "24 14", "score 24", "NaN", "50,1"]:
             self.assertIsNone(parse_clock(value), value)
         self.assertIsNone(parse_clock("700", maximum=60))
         self.assertIsNone(parse_clock("24", confidence=float('nan')))
@@ -93,6 +115,45 @@ class GateTests(unittest.TestCase):
             self.assertFalse(self.push("13", 2500 + i * 180, shot_clock=False))
         self.assertEqual(self.gate.confirmed.seconds, 8)
 
+    def test_game_stationary_recovery_survives_brief_missing_frames(self):
+        self.confirm('6:40', shot_clock=False)
+        for value, t in [('6:43', 1540), ('', 1720), ('6:43', 1900),
+                         ('', 2080), ('6:43', 2260), ('', 2440)]:
+            self.assertFalse(self.push(value, t, shot_clock=False))
+        self.assertTrue(self.push('6:43', 2800, shot_clock=False))
+        self.assertTrue(self.gate.game_pause_confirmed)
+        self.assertEqual(self.gate.confirmed.seconds, 403)
+        self.confirm('6:42', 2980, shot_clock=False)
+        self.assertFalse(self.gate.game_pause_confirmed)
+
+    def test_game_pause_rejects_conflicts_long_blind_gaps_and_absurd_increases(self):
+        for samples in [
+            [('6:43', 1540), ('6:43', 1720), ('6:43', 2800), ('6:43', 2980)],
+            [('6:43', 1540), ('6:44', 1720), ('6:43', 1900), ('6:44', 2080),
+             ('6:43', 2260), ('6:43', 2800)],
+            [('8:00', 1540+i*180) for i in range(14)],
+        ]:
+            self.gate.reset()
+            self.confirm('6:40', shot_clock=False)
+            for value, t in samples:
+                self.assertFalse(self.push(value, t, shot_clock=False))
+            self.assertEqual(self.gate.confirmed.seconds, 400)
+
+    def test_game_recovery_does_not_ratchet_up_by_ten_seconds_repeatedly(self):
+        self.confirm('6:40', shot_clock=False)
+        for i in range(8):
+            self.push('6:48', 1540+i*180, shot_clock=False)
+        self.assertEqual(self.gate.confirmed.seconds, 408)
+        for i in range(15):
+            self.assertFalse(self.push('6:56', 3500+i*180, shot_clock=False))
+        self.assertEqual(self.gate.confirmed.seconds, 408)
+
+    def test_colon_tenths_can_continue_as_dot_tenths(self):
+        for value, t in [('3:9', 1000), ('3.7', 1180)]:
+            self.assertFalse(self.push(value, t, shot_clock=False))
+        self.assertTrue(self.push('3:5', 1360, shot_clock=False))
+        self.assertEqual(self.gate.confirmed.seconds, 3.5)
+
     def test_blank_low_confidence_and_outliers_hold_value_without_replay(self):
         self.confirm("20")
         for value, t, confidence in [("", 1540, 1), ("19", 1720, .5), ("2", 1900, 1), ("", 2080, 1)]:
@@ -162,6 +223,12 @@ class GateTests(unittest.TestCase):
         self.confirm("8")
         self.gate.reset()
         self.confirm("50.1", 2000)
+
+    def test_manual_baseline_rejects_pre_click_captures_without_rewinding_it(self):
+        self.gate.set_baseline(parse_clock('01:43'), 3000, shot_clock=False)
+        for value, t in [('103', 2800), ('01:43', 2980)]:
+            self.assertFalse(self.push(value, t, shot_clock=False))
+            self.assertEqual(self.gate.confirmed_ms, 3000)
 
     def test_game_auto_rejects_fast_drop_even_after_repeated_votes(self):
         self.confirm('6:40', shot_clock=False)

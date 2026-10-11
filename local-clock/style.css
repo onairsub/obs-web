@@ -15,3 +15,4 @@ footer{display:flex;justify-content:space-between;gap:12px;color:#7894a8;font-si
 .viewer-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.viewer-heading>.section-title{flex-direction:column;align-items:start;gap:5px}.viewer-heading>.section-title>span{text-align:left;font-size:10px}.roi-toolbar{flex:none}
 @media(max-width:620px){.viewer-heading{flex-wrap:wrap;gap:10px}.viewer-heading>.section-title{flex-direction:row;align-items:center;width:100%}.roi-toolbar{width:100%}}
 .format-rule{margin-left:auto;color:#8da4b5;font-size:10px;font-weight:400}
+.apply-number{cursor:pointer;user-select:none;border-radius:4px;outline-offset:3px}.apply-number:hover{background:#263a4980}.apply-number:focus-visible{outline:2px solid #59dcaa}.low-sync{height:22px;gap:7px;font-size:10px}.apply-hint{font-size:10px;color:#a2bfcd}
