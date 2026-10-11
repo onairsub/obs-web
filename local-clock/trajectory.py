@@ -35,12 +35,69 @@ class ClockTrajectory:
             if cumulative >= midpoint:
                 return value
 
+    def _transition(self, captured_ms):
+        """Detect a new state without waiting for the old 1.5s line to expire.
+
+        Repeated *identical* tenths give stronger stop evidence than the loose
+        residual used to fit a noisy line. Resume needs two decreasing frames
+        consistent with both real time and the previously established stop.
+        Neither path can turn a single wrong digit into a state change.
+        """
+        recent = self.points
+        newest = recent[-1][0]
+        matches = [(r, t) for r, t in recent if abs(r.seconds-newest.seconds) < .025]
+        recent = [(r, t) for r, t in recent if t >= matches[0][1]]
+        support = sum(r.confidence for r, _ in matches)
+        total = sum(r.confidence for r, _ in recent)
+        if (len(matches) >= 3 and captured_ms-matches[0][1] >= 240
+                and support >= total*.7
+                and all(b[1]-a[1] <= 850 for a, b in zip(matches, matches[1:]))):
+            return ClockFit(newest.seconds, captured_ms, 0, len(matches), len(recent),
+                            round(captured_ms-matches[0][1]), 50)
+
+        stopped = self.last_fit
+        if not stopped or stopped.rate != 0 or len(self.points) < 2:
+            return None
+        (first, first_ms), (last, last_ms) = self.points[-2:]
+        elapsed = (last_ms-first_ms)/1000
+        held_points = [(r, t) for r, t in self.points
+                       if t < first_ms and abs(r.seconds-stopped.seconds) < .025]
+        # A loose stationary fit may include the first 0.1s decrease as noise.
+        # Anchor to the last actual held digit, not that fit's update timestamp.
+        if not held_points:
+            return None
+        held_ms = held_points[-1][1]
+        # A long blind gap requires the ordinary three-point fit.
+        if not (0 < first_ms-held_ms <= 450 and .12 <= elapsed <= .45):
+            return None
+        first_drop = stopped.seconds-first.seconds
+        drop = first.seconds-last.seconds
+        if not (.1-1e-6 <= first_drop <= (first_ms-held_ms)/1000 + .12
+                and stopped.seconds-last.seconds >= .25
+                and drop >= .1-1e-6 and abs(drop-elapsed) <= .11):
+            return None
+        projected = [first.seconds-elapsed, last.seconds]
+        offset = self._weighted_median([(projected[0], first.confidence), (projected[1], last.confidence)])
+        return ClockFit(max(0, offset-.05), captured_ms, 1, 2, 2,
+                        round(last_ms-first_ms), round((abs(drop-elapsed)/2+.05)*1000))
+
+    def _remember(self, fit):
+        if self.last_fit is not None and self.last_fit.rate != fit.rate:
+            # Once a transition is supported, observations from the previous
+            # state must not outvote it again or pull its offset backward.
+            self.points = [(r, t) for r, t in self.points if t >= fit.captured_ms-fit.span_ms-1]
+        self.last_fit = fit
+        return fit
+
     def observe(self, reading, captured_ms):
         self.points = [(r, t) for r, t in self.points if captured_ms - t <= self.window_ms]
         # A blind interval does not constitute evidence for a pause.
         if self.points and captured_ms - self.points[-1][1] > 850:
             self.points = []
         self.points.append((reading, captured_ms))
+        transition = self._transition(captured_ms)
+        if transition is not None:
+            return self._remember(transition)
         candidates = []
         # Recent suffixes allow a stop/resume to replace an older trajectory.
         # Within each suffix use consensus first, then a weighted median offset.
@@ -76,8 +133,7 @@ class ClockTrajectory:
         if not candidates:
             return None
         winner = max(candidates, key=lambda item: item[:3])[3]
-        self.last_fit = winner
-        return winner
+        return self._remember(winner)
 
     def status(self):
         return asdict(self.last_fit) if self.last_fit else None

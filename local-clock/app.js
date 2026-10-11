@@ -357,7 +357,7 @@ async function statusLoop() {
       clearReadouts();
       $('result').textContent=e.message;$('rawReading').textContent='연결이 복구되면 다시 인식합니다.';
     }
-    await new Promise(r=>setTimeout(r,500));
+    await new Promise(r=>setTimeout(r,200));
   }
 }
 // A new page always starts disarmed, even after a reload of an armed session.

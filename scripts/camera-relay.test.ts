@@ -335,6 +335,38 @@ test("local JPEG → real OCR → Python client → relay → authoritative host
     assert.equal(host.snapshot().clocks[key].running,true,'new decreasing points restart tenths playback');
   }
 
+  // Under one minute, a brief decimal stop/resume must reach the host without
+  // waiting for the old 1.5-second trajectory window to expire.
+  const transitionImages = ['8.9','8.7','8.5','8:3','8:1'].map(text =>
+    execFileSync(python,['local-clock/benchmark.py','--jpeg',text]));
+  generation = (await json('/api/settings', { enabled: true, keys: [gameKey], mode: 'auto', game_low_sync: true })).generation;
+  for (const image of transitionImages.slice(0,3)) {
+    await delay(180);
+    await frame(image,false,generation,gameKey);
+  }
+  await delay(40);
+  assert.equal(host.snapshot().clocks[gameKey].running,true);
+  for (let i=0;i<2;i++) {
+    await delay(180);
+    await frame(transitionImages[2],false,generation,gameKey);
+  }
+  await delay(40);
+  assert.equal(host.snapshot().clocks[gameKey].running,false,'three identical tenths must stop the host promptly');
+  assert.equal(host.snapshot().clocks[gameKey].baseMs,8500);
+  for (const image of transitionImages.slice(3)) {
+    await delay(180);
+    const result=await frame(image,false,generation,gameKey);
+    assert.equal(result.reading.resolution_ms,100,'single-digit colons also participate in fast resume');
+  }
+  await delay(40);
+  const resumedDecimal=host.snapshot().clocks[gameKey];
+  assert.equal(resumedDecimal.running,true,'two plausible decreasing reads restart a confirmed stop');
+  const resumedValue=clockValue(resumedDecimal,'down',Date.now());
+  await delay(500);
+  assert.equal((await frame(blank,false,generation,gameKey)).sent,false);
+  assert.deepEqual(host.snapshot().clocks[gameKey],resumedDecimal);
+  assert.ok(clockValue(resumedDecimal,'down',Date.now())<resumedValue-450,'resumed timer keeps counting while occluded');
+
   // Hold mode still needs a useful local preview when synchronization is off.
   generation = (await json("/api/settings", { enabled: false, keys: [shotKey, gameKey], mode: "hold" })).generation;
   const beforePreview = host.snapshot().revision;
